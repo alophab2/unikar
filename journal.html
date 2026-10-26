@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% block title %}记录{% endblock %}
+{% block content %}
+<script>window.PAGE_TITLE_KEY='nav_journal';</script>
+<div class="card">
+  <h3><span data-i18n="j_title">报价记录</span> <span class="mut" data-i18n="j_hint">（点击展开明细，更新状态）</span></h3>
+  <div class="filters" style="margin-bottom:10px">
+    <div><label data-i18n="status">状态</label><select id="fStatus">
+      <option value="" data-i18n="all">全部</option><option value="pending" data-i18n="st_pending">待定</option>
+      <option value="won" data-i18n="st_won">成交</option><option value="lost" data-i18n="st_lost">未成交</option></select></div>
+    <div><label data-i18n="from">从</label><input type="date" id="fFrom"></div>
+    <div><label data-i18n="to">到</label><input type="date" id="fTo"></div>
+    <div><label>&nbsp;</label><button class="sec" onclick="load()" data-i18n="filter">筛选</button></div>
+  </div>
+  <div style="overflow-x:auto"><table id="tbl">
+    <thead><tr><th>#</th><th data-i18n="th_date">日期</th><th data-i18n="th_customer">客户</th><th data-i18n="th_type">类型</th><th data-i18n="th_vehicle">车辆</th><th data-i18n="th_amount">金额</th><th data-i18n="status">状态</th><th data-i18n="th_staff">员工</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div>
+<div class="modal" id="modal"><div class="box" id="mbox"></div></div>
+{% endblock %}
+
+{% block script %}
+<script>
+function stCell(s){
+  const m={pending:['st_pending','st-pending'],won:['st_won','st-won'],lost:['st_lost','st-lost']}[s]||['st_pending','st-pending'];
+  return [T(m[0]),m[1]];
+}
+function ctName(t){ return t==='retail'?T('retail'):t==='garage'?T('garage'):''; }
+async function load(){
+  const q=new URLSearchParams({status:document.getElementById('fStatus').value,
+    from:document.getElementById('fFrom').value,to:document.getElementById('fTo').value});
+  const rows=await api('api/quotes?'+q);
+  document.querySelector('#tbl tbody').innerHTML=rows.map(r=>{const st=stCell(r.status);return `<tr>
+    <td>${r.id}</td><td class="mut">${esc(r.created_at.slice(0,16))}</td>
+    <td>${esc(r.customer_name||'—')}</td><td class="mut">${ctName(r.customer_type)}</td>
+    <td>${esc(r.vehicle_text||'')}</td><td><b>$${r.total.toFixed(2)}</b></td>
+    <td class="${st[1]}">${st[0]}</td>
+    <td class="mut">${esc(r.staff_name||'—')}</td>
+    <td><button class="sec" style="padding:4px 10px" onclick="openQ(${r.id})">${T('view')}</button>
+    <button class="sec" style="padding:4px 10px" onclick="location.href=appBase()+'?edit_quote=${r.id}'">${T('edit')}</button></td></tr>`;}).join('')
+    ||'<tr><td colspan="9" class="mut">'+esc(T('no_records'))+'</td></tr>';
+}
+async function openQ(id){
+  const q=await api('api/quotes/'+id);
+  const st=stCell(q.status);
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${T('nav_quote')} #${q.id} <span class="${st[1]}">${st[0]}</span></h3>
+    <div class="mut">${esc(q.created_at.slice(0,16))} · ${esc(q.customer_name||'')}（${ctName(q.customer_type)}）</div>
+    <div class="mut">${esc(q.vehicle_text||'')}${q.vin?' · VIN '+esc(q.vin):''}</div>
+    <table style="margin:10px 0"><thead><tr><th>${T('th_part')}</th><th>${T('th_qty')}</th><th>${T('th_cost')}</th><th>${T('th_quote')}</th></tr></thead><tbody>
+    ${q.items.map(i=>`<tr><td>${i.tier?`<span class="tier ${i.tier}">${tierName(i.tier)}</span> `:''}${esc(i.brand||'')} ${esc(i.part_number||'')}<br><span class="mut">${esc(i.specs||'')}</span></td>
+      <td>x${i.qty}</td><td>${i.cost!=null?'$'+i.cost.toFixed(2):'—'}</td><td><b>$${(i.quoted_price||0).toFixed(2)}</b></td></tr>`).join('')}
+    </tbody></table>
+    <div class="grid2">
+      <div><label>${T('status')}</label><select id="mStatus">
+        <option value="pending"${q.status==='pending'?' selected':''}>${T('st_pending')}</option>
+        <option value="won"${q.status==='won'?' selected':''}>${T('st_won')}</option>
+        <option value="lost"${q.status==='lost'?' selected':''}>${T('st_lost')}</option></select></div>
+      <div><label>${T('m_lost_reason')}</label><input id="mLost" list="lostDL" value="${esc(q.lost_reason||'')}" placeholder="${esc(T('ph_lost'))}" autocomplete="off">
+      <datalist id="lostDL">${['lr_price','lr_stock','lr_lead','lr_elsewhere','lr_norepair','lr_justasking','lr_noresp'].map(k=>`<option value="${esc(T(k))}">`).join('')}</datalist></div>
+    </div>
+    <label>${T('notes')}</label><textarea id="mNotes" rows="2">${esc(q.notes||'')}</textarea>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="saveQ(${q.id})">${T('save')}</button>
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${T('close')}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+}
+async function saveQ(id){
+  await api('api/quotes/'+id,{method:'PATCH',body:JSON.stringify({
+    status:document.getElementById('mStatus').value,
+    lost_reason:document.getElementById('mLost').value,
+    notes:document.getElementById('mNotes').value})});
+  document.getElementById('modal').classList.remove('open'); load();
+}
+document.getElementById('fStatus').onchange=load;
+window.onLangChange=load;
+// 待跟进：pending 超过 3 天，按金额排序
+load();
+applyLang();
+</script>
+{% endblock %}

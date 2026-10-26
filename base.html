@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuoteBook {% block title %}{% endblock %}</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#1c2530;--mut:#66727e;--line:#e2e8ee;
+--acc:#0b6bcb;--good:#2e7d32;--better:#1565c0;--best:#8e24aa;--warn:#b26a00;--bad:#c62828}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
+header.top{background:#10243c;color:#fff;padding:10px 14px;position:sticky;top:0;z-index:10}
+header.top .row{display:flex;gap:8px;align-items:center;max-width:1100px;margin:0 auto;flex-wrap:wrap}
+header.top b{font-size:17px;margin-right:8px}
+nav a{color:#cfe3f7;text-decoration:none;padding:6px 10px;border-radius:8px;font-size:14px}
+nav a.on{background:#ffffff22;color:#fff;font-weight:700}
+main{max-width:1100px;margin:0 auto;padding:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:16px}
+label{font-size:13px;color:var(--mut);display:block;margin:8px 0 4px}
+select,input,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:15px;background:#fff}
+select:focus,input:focus,textarea:focus{outline:2px solid #bcd9f7;border-color:var(--acc)}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:15px;cursor:pointer}
+button.sec{background:#eef2f6;color:var(--ink)}
+button.danger{background:var(--bad)}
+button:disabled{opacity:.5}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:13px}
+.tier{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;color:#fff;font-weight:700}
+.tier.economy{background:var(--good)}.tier.standard{background:var(--better)}.tier.premium{background:var(--best)}
+.mut{color:var(--mut);font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media(max-width:640px){.grid2,.grid3{grid-template-columns:1fr}}
+.cust-grid{display:grid;grid-template-columns:2fr 1.2fr auto;gap:8px;align-items:end}
+@media(max-width:640px){.cust-grid{grid-template-columns:1fr}}
+/* 手机端：报价配件表格转卡片 */
+@media(max-width:640px){
+  #partsTbl thead{display:none}
+  #partsTbl,#partsTbl tbody{display:block}
+  #partsTbl tr{display:block;border:1px solid #e2e8f0;border-radius:10px;
+    padding:10px 12px;margin-bottom:10px;background:#fff}
+  #partsTbl td{display:block;border:none;padding:2px 0;width:100%}
+  #partsTbl td:nth-child(1){font-weight:700;font-size:15px}
+  #partsTbl td:nth-child(2){font-size:14px;color:#334155}
+  #partsTbl td:nth-child(3){font-size:13px}
+  #partsTbl td:nth-child(4)::before{content:attr(data-lbl);color:#94a3b8;font-size:12px;margin-right:6px}
+  #partsTbl td:nth-child(5)::before{content:attr(data-lbl);color:#94a3b8;font-size:12px;margin-right:6px}
+  #partsTbl td:nth-child(6)::before{content:attr(data-lbl);color:#94a3b8;font-size:12px;margin-right:6px}
+}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filters>div{flex:1;min-width:130px}
+pre.quote{background:#0f1b2d;color:#e8f1fa;padding:14px;border-radius:10px;white-space:pre-wrap;font-size:13.5px;line-height:1.55;max-height:420px;overflow:auto}
+.tabs{display:flex;gap:8px;margin:10px 0}
+.tabs button{padding:8px 14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}
+.kpi .v{font-size:24px;font-weight:800}
+.kpi .l{font-size:13px;color:var(--mut)}
+.bar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:14px}
+.bar .t{width:150px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .fill{height:14px;background:var(--acc);border-radius:7px;min-width:2px}
+.bar .n{color:var(--mut);font-size:13px}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:flex-start;justify-content:center;padding:20px;z-index:50;overflow:auto}
+.modal.open{display:flex}
+.modal .box{background:#fff;border-radius:12px;padding:16px;max-width:560px;width:100%}
+.rowflex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.num{width:90px!important}
+/* 配件卡片列表 */
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.pcard .r1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pcard .r1 .cost{margin-left:auto;font-weight:800;font-size:16px}
+.pcard .r2{color:var(--mut);font-size:13px;margin-top:4px}
+.pcard .r3{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:13px}
+.pcard .r3 .miss{color:var(--warn);font-weight:700}
+.pcard .r3 button{margin-left:auto}
+input[type=checkbox]{width:22px;height:22px;accent-color:#2563eb;cursor:pointer;vertical-align:middle}
+td .rowflex{gap:6px}
+.st-pending{color:var(--warn);font-weight:700}.st-won{color:var(--good);font-weight:700}.st-lost{color:var(--bad);font-weight:700}
+.ss{position:relative}
+.ss-list{position:absolute;z-index:60;left:0;right:0;max-height:240px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);display:none}
+.ss-list div{padding:9px 10px;cursor:pointer;font-size:15px}
+.ss-list div:hover{background:#eef4ff}
+.langs{margin-left:auto;display:flex;gap:4px}
+.langs select option{color:#10243c;background:#fff}
+.userbox{position:relative;margin-left:8px}
+.userbox>button{background:transparent;border:1px solid #ffffff55;color:#cfe3f7;padding:4px 10px;font-size:13px;border-radius:20px;cursor:pointer;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.umenu{position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px #0003;min-width:140px;display:none;z-index:99}
+.umenu.open{display:block}
+.umenu button{display:block;width:100%;text-align:left;background:none;border:none;padding:10px 14px;font-size:14px;color:#b91c1c;cursor:pointer;border-radius:10px}
+.umenu button:hover{background:#fef2f2}
+.ms{position:relative}
+.ms-display{border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-height:41px;cursor:pointer;background:#fff;display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:15px}
+.ms-ph{color:var(--mut);font-size:14px}
+.chip{display:inline-block;background:#e8f0fe;color:#0b6bcb;border-radius:12px;padding:2px 10px;font-size:13px}
+.ms-panel{position:absolute;z-index:60;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);display:none;margin-top:4px}
+.ms-panel input{margin:8px;width:calc(100% - 16px)}
+.ms-list{max-height:220px;overflow:auto;padding-bottom:6px}
+.ms-list label{display:flex;gap:8px;align-items:center;padding:8px 10px;cursor:pointer;font-size:15px;margin:0}
+.ms-list label:hover{background:#eef4ff}
+.ms-list input[type=checkbox]{width:auto}
+</style>
+</head>
+<body>
+<script>{% include "i18n.js" %}</script>
+<header class="top"><div class="row">
+<a href="./" style="color:#fff;text-decoration:none"><b>📖 QuoteBook</b></a>
+<nav>
+<a href="./" class="{{'on' if page=='quote' else ''}}" data-i18n="nav_quote">报价</a>
+<a href="journal" class="{{'on' if page=='journal' else ''}}" data-i18n="nav_journal">记录</a>
+<a href="analytics" class="{{'on' if page=='analytics' else ''}}" data-i18n="nav_analytics">分析</a>
+<a href="parts" class="{{'on' if page=='parts' else ''}}" data-i18n="nav_parts">配件管理</a>
+<a href="staff" id="staffNav" style="display:none" class="{{'on' if page=='staff' else ''}}" data-i18n="nav_staff">员工</a>
+</nav>
+<div class="langs">
+<select id="langSel" onchange="setLang(this.value)" style="background:transparent;color:#fff;border:1px solid #475569;border-radius:20px;padding:6px 8px;font-size:13px">
+<option value="zh">中文</option><option value="en">EN</option><option value="fr">FR</option>
+</select>
+</div>
+<div class="userbox">
+<button id="meName" onclick="document.getElementById('umenu').classList.toggle('open')">…</button>
+<div class="umenu" id="umenu"><button id="logoutBtn" data-i18n="logout">退出</button></div>
+</div>
+</div></header>
+<script>try{applyLang();}catch(e){}</script>
+<main>{% block content %}{% endblock %}</main>
+<footer style="text-align:center;color:#94a3b8;font-size:12px;padding:12px 0 18px">QuoteBook v{{ ver }}</footer>
+<script>
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
+  if(r.status===401){ location.href=appBase()+'login'; throw new Error('login required'); }
+  if(!r.ok){ const t = await r.text(); throw new Error(t||('HTTP '+r.status)); }
+  return r.json();
+}
+/* app 子路径前缀：页面挂在 /quotebook/ 下，站内跳转必须带前缀 */
+function appBase(){ return location.pathname.replace(/\/[^/]*$/, '/'); }
+/* 新增车辆弹窗（报价页 / 配件管理共用）：afterSave(id,label) 在保存后回调 */
+let _vehicleAfterSave=null;
+let _vehicleEditId=null;
+function openVehicle(afterSave, existing){
+  _vehicleAfterSave=afterSave||null;
+  _vehicleEditId=existing?existing.id:null;
+  const dtOpts=[['',T('v_unspecified')],['FWD',T('dt_fwd')],['AWD',T('dt_awd')],['RWD',T('dt_rwd')],['4WD',T('dt_4wd')]]
+    .map(o=>`<option value="${o[0]}">${esc(o[1])}</option>`).join('');
+  const fuOpts=[['gas',T('fuel_gas')],['diesel',T('fuel_diesel')],['hybrid',T('fuel_hybrid')],['electric',T('fuel_electric')]]
+    .map(o=>`<option value="${o[0]}">${esc(o[1])}</option>`).join('');
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${existing?T('v_edit_title'):T('v_title')}</h3>
+    <div class="grid2">
+      <div style="grid-column:1/-1"><label>${T('v_base')}</label><input id="vBase" placeholder="${esc(T('v_ph'))}"></div>
+      <div><label>${T('v_year')}</label><input id="vYear" placeholder="2021" inputmode="numeric"></div>
+      <div><label>${T('v_dt')}</label><select id="vDt">${dtOpts}</select></div>
+      <div><label>${T('v_fuel')}</label><select id="vFuel">${fuOpts}</select></div>
+      <div style="grid-column:1/-1"><label>${T('v_full')}</label><input id="vLabel"></div>
+    </div>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="saveVehicle()">${T('save')}</button>
+      ${existing?`<button class="sec" id="vDelBtn" style="color:#b91c1c;display:none" onclick="deleteVehicle()">${T('delete')}</button>`:''}
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${T('cancel')}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+  // 删除按钮仅店主可见
+  if(existing){
+    api('api/me').then(me=>{ if(me.is_owner){const b=document.getElementById('vDelBtn'); if(b)b.style.display='';} }).catch(()=>{});
+  }
+  const upd=()=>{
+    const b=document.getElementById('vBase').value.trim();
+    const dt=document.getElementById('vDt').value;
+    const fu=document.getElementById('vFuel').value;
+    const fuTok={diesel:'Diesel',hybrid:'Hybrid',electric:'Electric'}[fu]||'';
+    document.getElementById('vLabel').value=(b+(dt?' '+dt:'')+(fuTok?' '+fuTok:'')).trim();
+    // 从名称开头自动识别年份（如 "2021 Chevrolet ..."）
+    const yEl=document.getElementById('vYear');
+    if(!yEl.value.trim()){
+      const ym=b.match(/^(\d{4})\b/);
+      if(ym) yEl.value=ym[1];
+    }
+  };
+  ['vBase','vDt','vFuel'].forEach(id=>document.getElementById(id).addEventListener('input',upd));
+  if(existing){
+    // 把 label 拆回基础名 + 驱动/燃油，方便改
+    let b=existing.label||'';
+    const fuTok={diesel:'Diesel',hybrid:'Hybrid',electric:'Electric'}[existing.fuel]||'';
+    if(fuTok&&b.endsWith(' '+fuTok)) b=b.slice(0,-(fuTok.length+1));
+    if(existing.drivetrain&&b.endsWith(' '+existing.drivetrain)) b=b.slice(0,-(existing.drivetrain.length+1));
+    document.getElementById('vBase').value=b;
+    document.getElementById('vYear').value=existing.year||'';
+    document.getElementById('vDt').value=existing.drivetrain||'';
+    document.getElementById('vFuel').value=existing.fuel||'gas';
+    upd();
+  }
+  document.getElementById('vBase').focus();
+}
+async function saveVehicle(){
+  const label=document.getElementById('vLabel').value.trim();
+  if(!label){alert(T('v_base'));return;}
+  const payload={label,
+    year:document.getElementById('vYear').value.trim()||null,
+    drivetrain:document.getElementById('vDt').value||null,
+    fuel:document.getElementById('vFuel').value||null};
+  let r, id;
+  if(_vehicleEditId){
+    r=await api('api/vehicles/'+_vehicleEditId,{method:'PATCH',body:JSON.stringify(payload)});
+    id=_vehicleEditId;
+  }else{
+    // 重复检测：已有相似车辆时提示直接选用
+    try{
+      const vs=await api('api/vehicles');
+      const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g,'');
+      const nl=norm(label);
+      const dup=vs.find(v=>{const vl=norm(v.label); return vl===nl||(nl&&vl.includes(nl))||(vl&&nl.includes(vl));});
+      if(dup && confirm(T('v_dup_confirm').replace('{name}',dup.label))){
+        document.getElementById('modal').classList.remove('open');
+        const cb=_vehicleAfterSave; _vehicleAfterSave=null; _vehicleEditId=null;
+        if(cb) cb(dup.id,dup.label);
+        return;
+      }
+    }catch(e){}
+    r=await api('api/vehicles',{method:'POST',body:JSON.stringify(payload)});
+    id=r.id;
+  }
+  _vehicleEditId=null;
+  document.getElementById('modal').classList.remove('open');
+  const cb=_vehicleAfterSave; _vehicleAfterSave=null;
+  if(cb) cb(id,label); else alert(T('added_vehicle'));
+}
+async function deleteVehicle(){
+  if(!_vehicleEditId) return;
+  if(!confirm(T('v_del_confirm'))) return;
+  try{
+    const r=await api('api/vehicles/'+_vehicleEditId,{method:'DELETE'});
+    document.getElementById('modal').classList.remove('open');
+    _vehicleEditId=null;
+    const cb=_vehicleAfterSave; _vehicleAfterSave=null;
+    if(cb) cb(null,null); // 通知调用方刷新
+    else location.reload();
+  }catch(e){
+    alert(e.message==='has_parts'?T('v_del_has_parts'):T('save_fail')+e.message);
+  }
+}
+/* 粘贴供应商文字 → 解析 → 自动填表（配件弹窗共用）
+   opts: {ta, text:{parseKey:elemId}, raw:{parseKey:elemId},
+          select:{parseKey:elemId}, category:{sel:elemId}} */
+async function parseFillPart(opts){
+  const ta=document.getElementById(opts.ta);
+  const text=(ta.value||'').trim();
+  if(!text){alert(T('alert_paste_first'));return;}
+  ta.disabled=true;
+  try{
+    const r=await api('api/parts/parse',{method:'POST',body:JSON.stringify({text})});
+    if(!r.parts.length){alert(T('alert_no_parts'));return;}
+    const p=r.parts[0];
+    const set=(id,v)=>{const el=document.getElementById(id); if(el&&v!==null&&v!==undefined&&v!=='') el.value=v;};
+    for(const k of Object.keys(opts.text||{})) if(p[k]!==null&&p[k]!==undefined&&p[k]!=='') set(opts.text[k],p[k]);
+    for(const k of Object.keys(opts.raw||{})){
+      const el=document.getElementById(opts.raw[k]);
+      if(el&&p[k]){el.dataset.raw=p[k]; el.value=noteLang(p[k]);}
+    }
+    for(const k of Object.keys(opts.select||{})){
+      const el=document.getElementById(opts.select[k]);
+      if(el&&p[k]&&[...el.options].some(o=>o.value===p[k])) el.value=p[k];
+    }
+    if(opts.category&&p.category_suggest){
+      // 用全部分类匹配（车辆维度列表可能不含刚识别的新品类）；缺了就补一个选项
+      const cats=await api('api/categories');
+      const sel=document.getElementById(opts.category.sel);
+      const m=cats.find(c=>c.name===p.category_suggest);
+      if(m){
+        if(![...sel.options].some(o=>o.value===String(m.id))){
+          const o=document.createElement('option');
+          o.value=m.id; o.textContent=catName(m.name);
+          sel.appendChild(o);
+        }
+        sel.value=String(m.id);
+      }
+    }
+    if(r.warnings&&r.warnings.length) alert('⚠️ '+r.warnings.join('；'));
+    if(r.parts.length>1) alert(T('paste_multi_hint'));
+  }finally{ ta.disabled=false; }
+}
+function gp(cost, price){
+  if(cost==null||price==null||!price) return '—';
+  return (((price-cost)/price)*100).toFixed(1)+'%';
+}
+/* 返回数字字符串（给 GP% 输入框用），算不出返回 '' */
+function gpNum(cost, price){
+  if(cost==null||price==null||!price) return '';
+  return (((price-cost)/price)*100).toFixed(1);
+}
+/* 由目标 GP% 反推卖价 */
+function priceFromGp(cost, gpPct){
+  if(cost==null||gpPct==null||isNaN(gpPct)||gpPct>=100) return null;
+  return cost/(1-gpPct/100);
+}
+/* 供应商库存是实时快照：永远带上"何时查的"，超过3天标 ⚠️ */
+function fmtStock(p){
+  const note=(p.stock_note||'').slice(0,40);
+  if(!note) return '—';
+  let s=esc(stockLang(note));
+  const ts=p.stock_updated_at;
+  if(ts && ts.length>=16){
+    const disp=ts.slice(5,16);
+    let stale=false;
+    try{ stale=(Date.now()-new Date(ts.slice(0,16).replace(' ','T')+':00').getTime())>3*864e5; }catch(e){}
+    s+='<br><span class="mut">'+(stale?'⚠️ ':'')+esc(disp)+'</span>';
+  }
+  return s;
+}
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+/* 可搜索下拉：输入模糊过滤，点选/回车确认 */
+function makeSearchable(boxId, onPick, placeholder){
+  const box=document.getElementById(boxId);
+  box.classList.add('ss');
+  box.innerHTML='<input type="text" autocomplete="off" placeholder="'+esc(placeholder||'输入搜索…')+'"><div class="ss-list"></div>';
+  const inp=box.querySelector('input'), list=box.querySelector('.ss-list');
+  let items=[], sel=null;
+  function rows(){
+    const f=inp.value.trim().toLowerCase();
+    return items.filter(x=>!f||x.label.toLowerCase().includes(f)).slice(0,60);
+  }
+  function render(){
+    const rs=rows();
+    list.innerHTML=rs.length?rs.map((r,i)=>'<div data-i="'+i+'">'+esc(r.label)+'</div>').join('')
+      :'<div class="mut" style="padding:9px 10px">无匹配</div>';
+    list.style.display='block';
+    list.querySelectorAll('div[data-i]').forEach(el=>{
+      el.onmousedown=e=>{e.preventDefault();pick(rs[+el.dataset.i]);};
+    });
+  }
+  function pick(r){ inp.value=r.label; sel=r; list.style.display='none'; if(onPick)onPick(r); }
+  inp.addEventListener('input',render);
+  inp.addEventListener('focus',render);
+  inp.addEventListener('blur',()=>{setTimeout(()=>{list.style.display='none';},150);
+    if(sel&&inp.value!==sel.label)sel=null;});
+  return {
+    setItems(a){items=a||[];},
+    setPh(ph){inp.placeholder=ph;},
+    pickById(id){const r=items.find(x=>String(x.id)===String(id));if(r)pick(r);},
+    pickSilentById(id){const r=items.find(x=>String(x.id)===String(id));if(r){inp.value=r.label;sel=r;}},
+    get(){return sel;},
+    getId(){return sel?sel.id:'';},
+    getLabel(){return inp.value;},
+    clear(){inp.value='';sel=null;}
+  };
+}
+/* 多选下拉：可搜索 + checkbox 多选 */
+function makeMultiSelect(boxId, onChange, phSelect, phSearch, nameFn, emptyBtn){
+  const box=document.getElementById(boxId);
+  box.classList.add('ms');
+  box.innerHTML='<div class="ms-display" tabindex="0"><span class="ms-ph"></span></div>'+
+    '<div class="ms-panel"><input type="text" autocomplete="off"><div class="ms-list"></div></div>';
+  const disp=box.querySelector('.ms-display'), phel=box.querySelector('.ms-ph'),
+        panel=box.querySelector('.ms-panel'), inp=box.querySelector('.ms-panel input'),
+        list=box.querySelector('.ms-list');
+  let items=[], sel=new Set(), enabled=true, selPh=phSelect||'请选择…';
+  const dname=x=>(nameFn?nameFn(x.name):x.name);
+  function renderPh(){ phel.textContent=sel.size?'':selPh; phel.style.display=sel.size?'none':''; }
+  function renderChips(){
+    disp.querySelectorAll('.chip').forEach(c=>c.remove());
+    items.filter(x=>sel.has(String(x.id))).forEach(x=>{
+      const c=document.createElement('span'); c.className='chip'; c.textContent=dname(x);
+      disp.insertBefore(c,phel);
+    });
+    renderPh();
+  }
+  function renderList(){
+    const f=inp.value.trim().toLowerCase();
+    const rows=items.filter(x=>!f||x.name.toLowerCase().includes(f));
+    const selAllBtn=rows.length?`<div style="display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">
+      <button class="sec" data-msall style="padding:4px 10px;font-size:12px">${esc(T('select_all'))}</button>
+      <button class="sec" data-msclear style="padding:4px 10px;font-size:12px">${esc(T('clear'))}</button>
+      ${emptyBtn?`<button class="sec" data-msempty style="padding:4px 10px;font-size:12px">${esc(emptyBtn.label())}</button>`:''}
+    </div>`:(emptyBtn?`<div style="padding:8px 10px"><button class="sec" data-msempty style="padding:8px 14px">${esc(emptyBtn.label())}</button></div>`:'');
+    list.innerHTML=selAllBtn+(rows.length?rows.map(x=>
+      `<label><input type="checkbox" data-id="${x.id}" ${sel.has(String(x.id))?'checked':''}> ${esc(dname(x))}</label>`
+    ).join(''):'<div class="mut" style="padding:8px 10px">'+esc(T('no_match'))+'</div>');
+    const sa=list.querySelector('[data-msall]');
+    if(sa) sa.onclick=(e)=>{e.stopPropagation();
+      rows.forEach(x=>sel.add(String(x.id)));renderChips();renderList();
+      if(onChange)onChange(api.getIds());};
+    const cl=list.querySelector('[data-msclear]');
+    if(cl) cl.onclick=(e)=>{e.stopPropagation();
+      rows.forEach(x=>sel.delete(String(x.id)));renderChips();renderList();
+      if(onChange)onChange(api.getIds());};
+    const eb=list.querySelector('[data-msempty]');
+    if(eb) eb.onclick=()=>{panel.style.display='none';emptyBtn.fn();};
+    list.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.onchange=()=>{
+        const id=cb.getAttribute('data-id');
+        if(cb.checked)sel.add(id);else sel.delete(id);
+        renderChips();
+        if(onChange)onChange(api.getIds());
+      };
+    });
+  }
+  disp.addEventListener('click',()=>{
+    if(!enabled)return;
+    const open=panel.style.display!=='block';
+    panel.style.display=open?'block':'none';
+    if(open){renderList();inp.focus();}
+  });
+  inp.addEventListener('input',renderList);
+  inp.addEventListener('click',e=>e.stopPropagation());
+  document.addEventListener('click',e=>{if(!box.contains(e.target))panel.style.display='none';});
+  const api={
+    setItems(a){items=a||[];sel=new Set();inp.value='';renderChips();},
+    getIds(){return [...sel];},
+    setSel(ids){sel=new Set((ids||[]).map(String));renderChips();},
+    rerender(){renderChips();if(panel.style.display==='block')renderList();},
+    setPh(s){selPh=s;renderPh();},
+    setSearchPh(s){inp.placeholder=s;},
+    setEnabled(b){enabled=b;box.style.opacity=b?'':'0.5';disp.style.pointerEvents=b?'':'none';if(!b)panel.style.display='none';}
+  };
+  renderPh();
+  return api;
+}
+/* 顶栏：当前登录员工 + 退出（登录页不继承 base，无需判断） */
+(function(){
+  const lo=document.getElementById('logoutBtn');
+  if(lo) lo.onclick=async()=>{ try{await api('api/logout',{method:'POST'});}catch(e){} location.href=appBase()+'login'; };
+  document.addEventListener('click',e=>{
+    const ub=document.querySelector('.userbox');
+    if(ub && !ub.contains(e.target)) document.getElementById('umenu').classList.remove('open');
+  });
+  api('api/me').then(me=>{
+    const nm=document.getElementById('meName');
+    if(nm) nm.textContent=me.name+(me.is_owner?' · '+T('owner_badge'):'');
+    if(me.is_owner){const sn=document.getElementById('staffNav'); if(sn) sn.style.display='';}
+  }).catch(()=>{});
+})();
+</script>
+{% block script %}{% endblock %}
+<div class="modal" id="modal"><div class="box" id="mbox"></div></div>
+</body>
+</html>

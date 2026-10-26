@@ -1,0 +1,196 @@
+{% extends "base.html" %}{% block title %}员工{% endblock %}
+{% block content %}
+<script>window.PAGE_TITLE_KEY='nav_staff';</script>
+<div class="card">
+  <h3 data-i18n="staff_mgmt">员工管理</h3>
+  <div style="overflow-x:auto"><table id="staffTbl">
+    <thead><tr><th data-i18n="staff_name">姓名</th><th data-i18n="th_role">角色</th><th data-i18n="th_status">状态</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div>
+<div class="card">
+  <h3 data-i18n="add_staff">＋ 新增员工</h3>
+  <div class="grid3">
+    <div><label data-i18n="staff_name">姓名</label><input id="sName"></div>
+    <div><label data-i18n="pin">PIN 码</label><input id="sPin" inputmode="numeric" data-i18n-ph="pin_ph" placeholder="至少 4 位"></div>
+    <div style="align-self:end"><button id="sAdd" data-i18n="add_staff">＋ 新增员工</button>
+    <span class="mut" id="sMsg"></span></div>
+  </div>
+</div>
+<div class="card">
+  <h3 data-i18n="backup_title">数据备份</h3>
+  <p class="mut" style="font-size:13px" data-i18n="backup_hint">报价、客户、配件数据都在这一个文件里。定期导出存好，换手机/换服务器或出问题时可恢复。</p>
+  <div class="rowflex">
+    <button id="bkExport" data-i18n="backup_export">⬇ 导出备份</button>
+    <button class="sec" id="xlExport" data-i18n="excel_export">📊 导出 Excel</button>
+    <button class="sec" id="bkRestoreBtn" data-i18n="backup_restore">⬆ 恢复备份</button>
+    <input type="file" id="bkFile" accept=".db" style="display:none">
+    <span class="mut" id="bkMsg"></span>
+  </div>
+  <div style="margin-top:10px">
+    <b style="font-size:13px" data-i18n="auto_backup_title">自动备份（每天一次，保留 7 天）</b>
+    <div id="autoBkList" class="mut" style="font-size:13px;margin-top:4px"></div>
+  </div>
+</div>
+<div class="card">
+  <h3 data-i18n="audit_title">操作记录</h3>
+  <div style="overflow-x:auto"><table id="auditTbl">
+    <thead><tr><th data-i18n="th_time">时间</th><th data-i18n="th_staff">员工</th><th data-i18n="th_action">操作</th><th data-i18n="th_detail">详情</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function loadStaff(){
+  const rows=await api('api/staff');
+  window._staffRows=rows;
+  document.querySelector('#staffTbl tbody').innerHTML=rows.map(s=>`<tr>
+    <td><b>${esc(s.name)}</b>${s.is_owner?' <span class="chip">'+esc(T('owner_badge'))+'</span>':''}</td>
+    <td>${esc(T(s.is_owner?'owner_badge':'staff_role'))}</td>
+    <td>${s.active?esc(T('active')):'<span class="mut">'+esc(T('disabled'))+'</span>'}</td>
+    <td class="rowflex">
+      <button class="sec" style="padding:4px 10px" onclick="editStaff(${s.id})">${esc(T('edit'))}</button>
+      <button class="sec" style="padding:4px 10px" onclick="toggleStaff(${s.id},${s.active?0:1})">${esc(T(s.active?'disable':'enable'))}</button>
+      <button class="sec" style="padding:4px 10px" onclick="resetPin(${s.id})">${esc(T('reset_pin'))}</button>
+    </td></tr>`).join('');
+}
+function editStaff(id){
+  const s=(window._staffRows||[]).find(x=>x.id===id);
+  if(!s)return;
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${esc(T('staff_edit_title'))}</h3>
+    <div><label>${esc(T('th_staff'))}</label><input id="seName" value="${esc(s.name)}"></div>
+    <div style="margin-top:8px"><label>${esc(T('th_role'))}</label>
+      <select id="seRole">
+        <option value="0"${s.is_owner?'':' selected'}>${esc(T('staff_role'))}</option>
+        <option value="1"${s.is_owner?' selected':''}>${esc(T('owner_badge'))}</option>
+      </select></div>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="saveStaff(${s.id})">${esc(T('save'))}</button>
+      <button class="danger" onclick="delStaff(${s.id})">${esc(T('delete'))}</button>
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${esc(T('cancel'))}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+}
+async function delStaff(id){
+  const s=(window._staffRows||[]).find(x=>x.id===id);
+  if(!confirm(T('staff_del_confirm')+' — '+(s?s.name:'')))return;
+  try{
+    await api('api/staff/'+id,{method:'DELETE'});
+    document.getElementById('modal').classList.remove('open'); loadStaff();
+  }catch(e){ alert(T('save_fail')+e.message); }
+}
+async function saveStaff(id){
+  const name=document.getElementById('seName').value.trim();
+  if(!name){alert(T('alert_name_required'));return;}
+  try{
+    await api('api/staff/'+id,{method:'PATCH',body:JSON.stringify({
+      name, is_owner:document.getElementById('seRole').value==='1'})});
+    document.getElementById('modal').classList.remove('open'); loadStaff();
+  }catch(e){ alert(T('save_fail')+e.message); }
+}
+async function toggleStaff(id,on){
+  await api('api/staff/'+id,{method:'PATCH',body:JSON.stringify({active:!!on})});
+  loadStaff();
+}
+async function resetPin(id){
+  const s=(window._staffRows||[]).find(x=>x.id===id);
+  const pin=prompt(T('reset_pin')+' — '+(s?s.name:''), '');
+  if(pin===null) return;
+  if(pin.length<4){alert(T('pin_ph'));return;}
+  await api('api/staff/'+id,{method:'PATCH',body:JSON.stringify({pin})});
+  loadStaff();
+}
+document.getElementById('sAdd').onclick=async ()=>{
+  const name=document.getElementById('sName').value.trim();
+  const pin=document.getElementById('sPin').value;
+  const msg=document.getElementById('sMsg');
+  if(!name||pin.length<4){msg.textContent=T('pin_ph');return;}
+  try{
+    await api('api/staff',{method:'POST',body:JSON.stringify({name,pin})});
+    document.getElementById('sName').value='';document.getElementById('sPin').value='';msg.textContent='';
+    loadStaff();
+  }catch(e){ msg.textContent=e.message; }
+};
+window.onLangChange=()=>{loadStaff();loadAutoBackups();loadAudit();};
+loadStaff();loadAutoBackups();loadAudit();
+/* ---- 审计日志 ---- */
+const AUDIT_ACTIONS={delete_part:'🗑',delete_quote:'🗑',delete_staff:'🗑',delete_vehicle:'🗑',price_change:'💲'};
+async function loadAudit(){
+  try{
+    const r=await api('api/audit');
+    document.querySelector('#auditTbl tbody').innerHTML=(r.logs||[]).map(l=>
+      `<tr><td class="mut">${esc((l.created_at||'').slice(0,16))}</td><td><b>${esc(l.staff_name||'—')}</b></td><td>${AUDIT_ACTIONS[l.action]||''} ${esc(l.action)}</td><td class="mut">${esc(l.details||'')}</td></tr>`
+    ).join('')||'<tr><td colspan="4" class="mut">'+esc(T('no_records'))+'</td></tr>';
+  }catch(e){}
+}
+/* ---- 自动备份列表 ---- */
+async function loadAutoBackups(){
+  try{
+    const r=await api('api/backup/auto_list');
+    const el=document.getElementById('autoBkList');
+    el.innerHTML=r.backups.length
+      ? r.backups.map(b=>`<div>📦 ${esc(b.name)} <span class="mut">${esc(b.mtime)} · ${(b.size/1024).toFixed(0)} KB</span></div>`).join('')
+      : `<span class="mut">${esc(T('no_records'))}</span>`;
+  }catch(e){}
+}
+/* ---- 数据备份 ---- */
+document.getElementById('bkExport').onclick=async ()=>{
+  const msg=document.getElementById('bkMsg');
+  msg.textContent=T('backup_working');
+  try{
+    const r=await fetch('api/backup/export');
+    if(r.status===401){location.href=appBase()+'login';return;}
+    if(r.status===403)throw new Error(T('owner_only'));
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const blob=await r.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='quotebook-backup-'+new Date().toISOString().slice(0,10)+'.db';
+    document.body.appendChild(a); a.click(); a.remove();
+    msg.textContent=T('backup_done');
+  }catch(e){ msg.textContent=T('save_fail')+e.message; }
+};
+document.getElementById('bkRestoreBtn').onclick=()=>document.getElementById('bkFile').click();
+/* ---- 导出 Excel ---- */
+document.getElementById('xlExport').onclick=async ()=>{
+  const msg=document.getElementById('bkMsg');
+  msg.textContent=T('backup_working');
+  try{
+    const r=await fetch('api/backup/export_excel');
+    if(r.status===401){location.href=appBase()+'login';return;}
+    if(r.status===403)throw new Error(T('owner_only'));
+    if(!r.ok){
+      let d='HTTP '+r.status;
+      try{ d=(await r.json()).detail||d; }catch(_){}
+      throw new Error(d);
+    }
+    const blob=await r.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='quotebook-export-'+new Date().toISOString().slice(0,10)+'.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    msg.textContent=T('excel_done');
+  }catch(e){ msg.textContent=T('save_fail')+e.message; }
+};
+document.getElementById('bkFile').onchange=async (e)=>{
+  const file=e.target.files[0]; e.target.value='';
+  if(!file)return;
+  if(!confirm(T('backup_restore_confirm')))return;
+  const msg=document.getElementById('bkMsg');
+  msg.textContent=T('backup_working');
+  try{
+    const fd=new FormData(); fd.append('backup',file);
+    const r=await fetch('api/backup/restore',{method:'POST',body:fd});
+    if(r.status===401){location.href=appBase()+'login';return;}
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+    msg.textContent=T('backup_restored');
+    setTimeout(()=>location.reload(),1200);
+  }catch(err){ msg.textContent=T('save_fail')+err.message; }
+};
+applyLang();
+</script>
+{% endblock %}

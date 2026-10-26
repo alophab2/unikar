@@ -1,0 +1,607 @@
+{% extends "base.html" %}{% block title %}报价{% endblock %}
+{% block content %}
+<script>window.PAGE_TITLE_KEY='nav_quote';</script>
+<div class="card" id="step1">
+  <div id="editBanner" style="display:none" class="rowflex">
+    <b>📝 <span id="editBannerText"></span></b>
+    <button class="sec" onclick="location.href=appBase()" data-i18n="cancel_edit">取消编辑</button>
+    <button class="danger" id="delQuoteBtn" data-i18n="delete">删除</button>
+  </div>
+  <h3 data-i18n="q_step1">1 · 选择车型</h3>
+  <div class="grid2">
+    <div><label data-i18n="vehicle">车辆</label>
+      <div class="rowflex"><div id="vehicleBox" style="flex:1"></div>
+      <button class="sec" id="vehAddBtn" style="white-space:nowrap" data-i18n="add_vehicle">＋ 新增车辆</button>
+      <button class="sec" id="vehEditBtn" style="white-space:nowrap" title="✎">✎</button></div>
+    </div>
+    <div><label data-i18n="category">品类</label><div id="catBox"></div></div>
+  </div>
+  </div>
+</div>
+
+<div class="card" id="step2">
+  <h3><span data-i18n="q_step2">2 · 选择配件</span> <span class="mut" data-i18n="q_step2_hint">（good / better / best 并排，价格可改）</span></h3>
+  <div class="filters">
+    <div><label data-i18n="brand">品牌</label><select id="fBrand"><option value="" data-i18n="all">全部</option></select></div>
+    <div><label data-i18n="coated">涂层</label><select id="fCoated"><option value="" data-i18n="all">全部</option><option value="coated">coated</option><option value="uncoated">uncoated</option></select></div>
+    <div><label data-i18n="position">位置</label><select id="fPos"><option value="" data-i18n="all">全部</option><option value="Front" data-i18n="pos_front">前</option><option value="Rear" data-i18n="pos_rear">后</option><option value="Left" data-i18n="pos_left">左</option><option value="Right" data-i18n="pos_right">右</option><option value="Front Left" data-i18n="pos_front_left">前左</option><option value="Front Right" data-i18n="pos_front_right">前右</option><option value="Rear Left" data-i18n="pos_rear_left">后左</option><option value="Rear Right" data-i18n="pos_rear_right">后右</option></select></div>
+    <div style="align-self:end"><button class="sec" id="partAddBtn" data-i18n="add_part">＋ 新增配件</button></div>
+  </div>
+  <div style="overflow-x:auto;margin-top:8px"><table id="partsTbl">
+    <thead><tr><th><input type="checkbox" id="selAllChk" onchange="toggleSelAll(this.checked)" style="width:18px;height:18px" title="全选"></th><th data-i18n="th_tier">档</th><th data-i18n="th_brandpn">品牌 / 件号</th><th data-i18n="th_specs">规格</th><th data-i18n="th_cost">成本</th><th data-i18n="th_stock">库存</th><th data-i18n="th_quote">报价</th><th>GP%</th><th data-i18n="th_qty">数量</th><th data-i18n="alt_swap">互换</th></tr></thead>
+    <tbody><tr><td colspan="10" class="mut" data-i18n="please_select_vc">请先选择车辆与品类</td></tr></tbody>
+  </table></div>
+  <h3 style="margin:12px 0 6px" data-i18n="sel_title">已选清单</h3>
+  <div id="selList" class="mut">尚未选择配件</div>
+  <div class="rowflex" style="margin-top:8px"><b data-i18n="subtotal">小计：</b><b id="subtotal">CAD 0.00</b></div>
+</div>
+
+<div class="card" id="step3">
+  <h3 data-i18n="q_step3">3 · 选择客户</h3>
+  <div class="cust-grid">
+    <div><label data-i18n="customer">客户</label><div id="custBox"></div></div>
+    <div><label data-i18n="ctype_label">客户类型（决定价格层）</label>
+      <select id="ctype"><option value="retail" data-i18n="retail">散客</option><option value="garage" data-i18n="garage">修车厂</option></select></div>
+    <div class="rowflex">
+      <button class="sec" id="custAddBtn" data-i18n="add_customer">＋ 新增客户</button>
+      <button class="sec" id="custEditBtn" title="✎">✎</button>
+      <button class="sec" id="custClearBtn" data-i18n="clear">清除</button>
+    </div>
+  </div>
+  <div class="mut" id="custInfo" style="margin-top:6px"></div>
+<script>/* 客户类型记忆上次选择 */
+(function(){
+  const el=document.getElementById('ctype');
+  try{const m=localStorage.getItem('qb_ctype');if(m==='retail'||m==='garage')el.value=m;}catch(e){}
+  el.addEventListener('change',()=>{try{localStorage.setItem('qb_ctype',el.value);}catch(e){}});
+})();
+</script>
+</div>
+
+<div class="card" id="step4">
+  <h3 data-i18n="q_step4">4 · 生成报价</h3>
+  <div class="grid3">
+    <div><label data-i18n="vin_opt">VIN（可选）</label><input id="vin" data-i18n-ph="ph_vin" placeholder="17 位 VIN"></div>
+    <div><label data-i18n="notes">备注</label><input id="qnotes" data-i18n-ph="ph_notes" placeholder="备注"></div>
+  </div>
+  <div class="rowflex" style="margin:10px 0">
+    <button id="genBtn" data-i18n="gen_text">生成报价文本</button>
+    <button id="saveBtn" class="sec" data-i18n="save_quote">保存报价到记录</button>
+    <span class="mut" id="saveMsg"></span>
+  </div>
+  <div id="quoteOut" style="display:none">
+    <div class="rowflex"><b>English</b><button id="copyEN" class="sec" data-i18n="copy_en">📋 复制英文</button></div>
+    <pre class="quote" id="quoteTextEN"></pre>
+    <div class="rowflex" style="margin-top:10px"><b>Français</b><button id="copyFR" class="sec" data-i18n="copy_fr">📋 复制法语</button></div>
+    <pre class="quote" id="quoteTextFR"></pre>
+  </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+let parts=[], selected=new Map(), priceEdits=new Map(), quoteEN='', quoteFR='';
+
+let vehicleSS=null, catMS=null, custSS=null, custSel=null, _vehList=[];
+async function loadVehicles(){
+  const v=await api('api/vehicles');
+  _vehList=v;
+  vehicleSS=makeSearchable('vehicleBox',onVehiclePick,T('ph_search_vehicle'));
+  vehicleSS.setItems(v.map(x=>({id:x.id,label:x.label})));
+  catMS=makeMultiSelect('catBox',()=>loadParts(),T('cat_multi_ph'),T('cat_search_ph'),n=>catName(n),
+    {label:()=>T('add_part'),fn:()=>openPartModal()});
+  catMS.setEnabled(false);
+  custSS=makeSearchable('custBox',onCustPick,T('ph_search_customer'));
+  await reloadCustomers();
+  document.getElementById('vehAddBtn').onclick=()=>openVehicle(async (id)=>{
+    const vs=await api('api/vehicles');
+    vehicleSS.setItems(vs.map(x=>({id:x.id,label:x.label})));
+    vehicleSS.pickById(id);
+  });
+  document.getElementById('vehEditBtn').title=T('v_edit_title');
+  document.getElementById('vehEditBtn').onclick=()=>{
+    const id=parseInt(vehicleSS.getId());
+    const vv=_vehList.find(x=>x.id===id);
+    if(!vv){alert(T('ph_search_vehicle'));return;}
+    openVehicle(async (nid)=>{
+      const vs=await api('api/vehicles');
+      _vehList=vs;
+      vehicleSS.setItems(vs.map(x=>({id:x.id,label:x.label})));
+      if(nid) vehicleSS.pickSilentById(nid);   // 只改名字，不清空已选配件
+      else { vehicleSS.clear(); onVehiclePick(null); }  // 已删除，清空选择
+    }, vv);
+  };
+  document.getElementById('partAddBtn').onclick=openPartModal;
+  document.getElementById('custAddBtn').onclick=()=>openCustModal(custSS.getLabel());
+  document.getElementById('custClearBtn').onclick=()=>{custSS.clear();onCustPick(null);};
+  const qp=new URLSearchParams(location.search);
+  window._pendingCids=(qp.get('category_ids')||'').split(',').filter(Boolean).map(Number);
+  window._pendingPids=(qp.get('part_ids')||'').split(',').filter(Boolean).map(Number);
+  const qv=qp.get('vehicle_id');
+  if(qv) vehicleSS.pickById(parseInt(qv));
+  const eq=qp.get('edit_quote');
+  if(eq) loadQuoteForEdit(parseInt(eq));
+}
+/* 编辑已有报价单：把车辆/客户/已选配件（含当时成交价）装回表单 */
+async function loadQuoteForEdit(qid){
+  const q=await api('api/quotes/'+qid);
+  window._editQid=qid;
+  document.getElementById('editBanner').style.display='flex';
+  document.getElementById('editBannerText').textContent=T('editing_banner')+' #'+qid;
+  document.getElementById('saveBtn').textContent='💾 '+T('edit')+' #'+qid;
+  /* 删除按钮仅店主可见 */
+  try{const me=await api('api/me');
+    if(!me.is_owner)document.getElementById('delQuoteBtn').style.display='none';
+  }catch(e){document.getElementById('delQuoteBtn').style.display='none';}
+  document.getElementById('vin').value=q.vin||'';
+  document.getElementById('qnotes').value=q.notes||'';
+  document.getElementById('ctype').value=q.customer_type||'retail';
+  // 客户
+  if(q.customer_id){
+    custSS.pickSilentById(q.customer_id);
+    const r=custSS.get();
+    if(r){custSel=r.raw;document.getElementById('ctype').value=custSel.ctype||q.customer_type||'retail';}
+  }else if(q.customer_name){
+    window._editCname=q.customer_name;
+    document.getElementById('custInfo').textContent=q.customer_name+' ('+T('unlinked_name')+')';
+  }
+  // 车辆（静默，不清空）
+  if(q.vehicle_id){
+    vehicleSS.pickSilentById(q.vehicle_id);
+    const cats=await api('api/categories?vehicle_id='+q.vehicle_id);
+    catMS.setEnabled(true);
+    catMS.setItems(cats.map(c=>({id:c.id,name:c.name})));
+    const allParts=await api('api/parts?vehicle_id='+q.vehicle_id);
+    const byId={}; allParts.forEach(p=>byId[p.id]=p);
+    const cids=[...new Set(q.items.map(it=>byId[it.part_id]?byId[it.part_id].category_id:null).filter(Boolean))];
+    if(cids.length){catMS.setSel(cids);await loadParts();}
+    for(const it of q.items){
+      const p=byId[it.part_id];
+      if(p){selected.set(p.id,{part:p,qty:it.qty,price:it.quoted_price});}
+      else{selected.set('snap'+it.id,{part:{id:it.part_id,tier:it.tier,brand:it.brand,
+        part_number:it.part_number,specs:it.specs,cost:it.cost,
+        price_retail:it.quoted_price,price_garage:it.quoted_price},
+        qty:it.qty,price:it.quoted_price});}
+    }
+    renderParts();
+    goStep(2);
+  }else{
+    for(const it of q.items){
+      selected.set('snap'+it.id,{part:{id:it.part_id,tier:it.tier,brand:it.brand,
+        part_number:it.part_number,specs:it.specs,cost:it.cost,
+        price_retail:it.quoted_price,price_garage:it.quoted_price},
+        qty:it.qty,price:it.quoted_price});
+    }
+    renderParts();
+  }
+}
+async function reloadCustomers(pickId){
+  const cs=await api('api/customers');
+  custSS.setItems(cs.map(c=>({id:c.id,label:c.name+(c.phone?' · '+c.phone:''),raw:c})));
+  if(pickId) custSS.pickById(pickId);
+}
+function onCustPick(r){
+  const info=document.getElementById('custInfo');
+  if(!r){custSel=null;info.textContent='';return;}
+  custSel=r.raw;
+  document.getElementById('ctype').value=custSel.ctype||'retail';
+  info.textContent=(custSel.phone?custSel.phone+' · ':'')+T(custSel.ctype==='garage'?'garage':'retail');
+  renderParts();
+  goStep(4);
+}
+/* 步骤间自动滚动：选车→配件，选客户→生成报价 */
+function goStep(n){
+  const el=document.getElementById('step'+n);
+  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function openCustModal(prefill, existing){
+  const c=existing||{};
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${existing?T('cust_edit_title'):T('cust_title')}</h3>
+    <div class="grid2">
+      <div><label>${T('cust_name')}</label><input id="cuName" value="${esc(c.name||prefill||'')}"></div>
+      <div><label>${T('phone')}</label><input id="cuPhone" value="${esc(c.phone||'')}"></div>
+      <div><label>${T('cust_type')}</label><select id="cuType"><option value="retail"${c.ctype!=='garage'?' selected':''}>${T('retail')}</option><option value="garage"${c.ctype==='garage'?' selected':''}>${T('garage')}</option></select></div>
+      <div><label>${T('cust_notes')}</label><input id="cuNotes" value="${esc(c.notes||'')}"></div>
+    </div>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="saveCust(${existing?existing.id:'null'})">${T('save')}</button>
+      ${existing?`<button class="danger" onclick="delCust(${existing.id})">${T('delete')}</button>`:''}
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${T('cancel')}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+  document.getElementById('cuName').focus();
+}
+async function saveCust(id){
+  const name=document.getElementById('cuName').value.trim();
+  if(!name){alert(T('alert_cust_name'));return;}
+  const body=JSON.stringify({name,
+    phone:document.getElementById('cuPhone').value.trim()||null,
+    ctype:document.getElementById('cuType').value,
+    notes:document.getElementById('cuNotes').value.trim()||null});
+  const r=id
+    ? await api('api/customers/'+id,{method:'PUT',body})
+    : await api('api/customers',{method:'POST',body});
+  document.getElementById('modal').classList.remove('open');
+  await reloadCustomers(id||r.id);
+}
+async function delCust(id){
+  if(!confirm(T('cust_del_confirm')))return;
+  await api('api/customers/'+id,{method:'DELETE'});
+  document.getElementById('modal').classList.remove('open');
+  custSS.clear(); onCustPick(null);
+  await reloadCustomers();
+}
+document.getElementById('custEditBtn').onclick=()=>{
+  if(!custSel){alert(T('cust_pick_first'));return;}
+  openCustModal(null, custSel);
+};
+/* ---- 配件详情弹窗（报价页点件号查看完整信息） ---- */
+function showPartDetail(id){
+  const p=(parts||[]).find(x=>x.id===id);
+  if(!p)return;
+  const row=(l,v)=>v?`<div style="display:flex;gap:8px;padding:5px 0;border-top:1px solid #f1f5f9"><span class="mut" style="min-width:90px">${esc(l)}</span><span>${v}</span></div>`:'';
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0"><b>${esc(p.brand||'')}</b> <span class="mut">${esc(p.part_number)}</span></h3>
+    ${row(T('category'),esc(catName(p.category_name||'')))}
+    ${row(T('specs'),esc(p.specs||''))}
+    ${row(T('position'),p.position?esc(posName(p.position)):'')}
+    ${row(T('coated'),esc(p.coated||''))}
+    ${row(T('th_tier'),p.tier?esc(tierName(p.tier)):'')}
+    ${row(T('th_cost'),p.cost!=null?'$'+p.cost.toFixed(2):'')}
+    ${row(T('retail'),p.price_retail!=null?'$'+p.price_retail.toFixed(2):'')}
+    ${row(T('garage'),p.price_garage!=null?'$'+p.price_garage.toFixed(2):'')}
+    ${row(T('supplier'),esc(p.seller||''))}
+    ${row(T('th_stock'),fmtStock(p))}
+    ${row('OEM #',esc(p.oem_number||''))}
+    ${row(T('fitment'),esc(fitLang(p.fitment_notes||'')))}
+    <div id="spList" style="margin-top:8px"><span class="mut">${esc(T('loading'))}…</span></div>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="editPartFull(${p.id})">${esc(T('edit'))}</button>
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${esc(T('close'))}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+  // 供应商比价
+  api('api/parts/'+id+'/supplier_prices').then(sp=>{
+    const el=document.getElementById('spList');
+    if(!el)return;
+    if(!sp.length){el.innerHTML='';return;}
+    el.innerHTML=`<div style="border-top:1px solid #f1f5f9;padding-top:8px"><b>${esc(T('supplier_prices'))}</b>`+
+      sp.map((s,i)=>`<div style="display:flex;gap:8px;padding:4px 0;font-size:13px">
+        <span style="min-width:90px">${esc(s.supplier)}</span>
+        <b style="color:${i===0?'#15803d':''}">$${Number(s.cost).toFixed(2)}</b>
+        <span class="mut">${esc(s.stock_note||'')}</span>
+        <span class="mut" style="margin-left:auto">${esc((s.updated_at||'').slice(0,10))}</span>
+      </div>`).join('')+`</div>`;
+  }).catch(()=>{});
+}
+// 完整编辑：弹窗内直接改配件所有字段，不用跳去配件页
+async function editPartFull(pid){
+  const p=await api('api/parts/'+pid);
+  const cats=await api('api/categories?vehicle_id='+p.vehicle_id);
+  const opts=cats.map(c=>`<option value="${c.id}"${c.id===p.category_id?' selected':''}>${esc(catName(c.name))}</option>`).join('');
+  const num=v=>v!=null?v:'';
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${esc(T('edit'))} · <b>${esc(p.brand||'')}</b> ${esc(p.part_number)}</h3>
+    <div class="grid2">
+      <div><label>${T('category')}</label><select id="epCat">${opts}</select></div>
+      <div><label>${T('brand')}</label><input id="epBrand" value="${esc(p.brand||'')}"></div>
+      <div><label>${T('part_no')}</label><input id="epPN" value="${esc(p.part_number||'')}"></div>
+      <div><label>OEM #</label><input id="epOEM" value="${esc(p.oem_number||'')}"></div>
+      <div style="grid-column:1/-1"><label>${T('specs')}</label><input id="epSpecs" value="${esc(p.specs||'')}" style="width:100%"></div>
+      <div><label>${T('position')}</label><select id="epPos"><option value="">—</option>${['Front','Rear','Left','Right','Front Left','Front Right','Rear Left','Rear Right'].map(v=>`<option value="${v}"${p.position===v?' selected':''}>${esc(posName(v))}</option>`).join('')}</select></div>
+      <div><label>${T('coated')}</label><select id="epCoated"><option value="">—</option><option value="coated"${p.coated==='coated'?' selected':''}>coated</option><option value="uncoated"${p.coated==='uncoated'?' selected':''}>uncoated</option></select></div>
+      <div><label>${T('th_cost')}</label><input id="epCost" type="number" step="0.01" value="${num(p.cost)}"></div>
+      <div><label>${T('th_tier')}</label><select id="epTier"><option value="">—</option>${['economy','standard','premium'].map(v=>`<option value="${v}"${p.tier===v?' selected':''}>${esc(tierName(v))}</option>`).join('')}</select></div>
+      <div><label>${T('retail')}</label><input id="epPR" type="number" step="0.01" value="${num(p.price_retail)}"></div>
+      <div><label>${T('garage')}</label><input id="epPG" type="number" step="0.01" value="${num(p.price_garage)}"></div>
+      <div><label>${T('supplier')}</label><input id="epSeller" value="${esc(p.seller||'')}"></div>
+      <div><label>${T('th_stock')}</label><input id="epStock" value="${esc(p.stock_note||'')}"></div>
+    </div>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="savePartFull(${pid})">${esc(T('save'))}</button>
+      <button class="sec" onclick="showPartDetail(${pid})">${esc(T('cancel'))}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+}
+async function savePartFull(pid){
+  const gv=id=>document.getElementById(id).value.trim()||null;
+  const gn=id=>{const v=document.getElementById(id).value;return v===''?null:parseFloat(v);};
+  const body={category_id:parseInt(document.getElementById('epCat').value),
+    brand:gv('epBrand'), part_number:gv('epPN'), oem_number:gv('epOEM'),
+    specs:gv('epSpecs'), position:gv('epPos'), coated:gv('epCoated'),
+    cost:gn('epCost'), tier:gv('epTier'), price_retail:gn('epPR'), price_garage:gn('epPG'),
+    seller:gv('epSeller'), stock_note:gv('epStock')};
+  if(!body.part_number){alert(T('alert_pn_required'));return;}
+  await api('api/parts/'+pid,{method:'PUT',body:JSON.stringify(body)});
+  // 同步本地列表
+  const p=(parts||[]).find(x=>x.id===pid);
+  if(p)Object.assign(p,body);
+  loadParts(); showPartDetail(pid);
+}
+async function openPartModal(){
+  const vid=vehicleSS.getId();
+  if(!vid){alert(T('please_select_vc'));return;}
+  const cats=await api('api/categories?vehicle_id='+vid);
+  const selIds=(catMS?catMS.getIds():[]).map(String);
+  const opts=cats.map(c=>`<option value="${c.id}"${selIds.includes(String(c.id))?' selected':''}>${esc(catName(c.name))}</option>`).join('');
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${T('qp_title')}</h3>
+    <div style="margin-bottom:10px"><label>${T('paste_fill_label')}</label>
+      <div class="rowflex"><textarea id="qpPaste" rows="2" style="flex:1"></textarea>
+      <button class="sec" style="white-space:nowrap" onclick="fillQuickFromPaste()">${esc(T('paste_fill_btn'))}</button></div></div>
+    <div class="grid2">
+      <div><label>${T('qp_cat')}</label><select id="qpCat">${opts}</select></div>
+      <div><label>${T('pi_cat_new')}</label><input id="qpCatNew" placeholder="${esc(T('pi_cat_new_ph'))}"></div>
+      <div><label>${T('brand')}</label><input id="qpBrand"></div>
+      <div><label>${T('part_no')} *</label><input id="qpPN"></div>
+      <div><label>${T('th_cost')}</label><input id="qpCost" type="number" step="0.01" min="0"></div>
+      <div><label>${T('specs')}</label><input id="qpSpecs"></div>
+      <div><label>${T('position')}</label><select id="qpPos"><option value="">—</option>${['Front','Rear','Left','Right','Front Left','Front Right','Rear Left','Rear Right'].map(v=>`<option value="${v}">${esc(posName(v))}</option>`).join('')}</select></div>
+      <div><label>${T('coated')}</label><select id="qpCoated"><option value="">—</option><option value="coated">coated</option><option value="uncoated">uncoated</option></select></div>
+      <div><label>${T('stock_note')}</label><input id="qpStock"></div>
+      <div><label>${T('th_tier')}</label><select id="qpTier"><option value="">—</option><option value="economy">${esc(tierName('economy'))}</option><option value="standard">${esc(tierName('standard'))}</option><option value="premium">${esc(tierName('premium'))}</option></select></div>
+    </div>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="saveQuickPart()">${T('save')}</button>
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${T('cancel')}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+  document.getElementById('qpPN').focus();
+}
+function fillQuickFromPaste(){
+  parseFillPart({ta:'qpPaste',
+    text:{brand:'qpBrand',part_number:'qpPN',specs:'qpSpecs',cost:'qpCost',stock_note:'qpStock'},
+    select:{position:'qpPos',coated:'qpCoated'},
+    category:{sel:'qpCat'}});
+}
+async function saveQuickPart(){
+  const pn=document.getElementById('qpPN').value.trim();
+  if(!pn){alert(T('alert_pn_required'));return;}
+  let cid=parseInt(document.getElementById('qpCat').value);
+  const cnew=document.getElementById('qpCatNew').value.trim();
+  if(cnew){cid=(await api('api/categories',{method:'POST',body:JSON.stringify({name:cnew})})).id;}
+  if(!cid||isNaN(cid)){alert(T('alert_choose_cat'));return;}
+  await api('api/parts',{method:'POST',body:JSON.stringify({
+    vehicle_id:parseInt(vehicleSS.getId()),
+    category_id:cid,
+    brand:document.getElementById('qpBrand').value.trim()||null, part_number:pn,
+    specs:document.getElementById('qpSpecs').value.trim()||null,
+    cost:document.getElementById('qpCost').value===''?null:parseFloat(document.getElementById('qpCost').value),
+    stock_note:document.getElementById('qpStock').value.trim()||null,
+    position:document.getElementById('qpPos').value||null,
+    coated:document.getElementById('qpCoated').value||null,
+    tier:document.getElementById('qpTier').value||null})});
+  document.getElementById('modal').classList.remove('open');
+  // 刷新品类多选并勾上新品类，马上能看到刚加的配件
+  const cats=await api('api/categories?vehicle_id='+vehicleSS.getId());
+  const prevSel=catMS.getIds();
+  catMS.setItems(cats.map(c=>({id:c.id,name:c.name})));
+  catMS.setSel([...new Set([...prevSel,String(cid)])]);
+  loadParts();
+}
+async function onVehiclePick(r){
+  selected.clear(); priceEdits.clear(); parts=[];
+  if(!r){ catMS.setItems([]); catMS.setEnabled(false); renderParts(); return; }
+  goStep(2);
+  catMS.setEnabled(true);
+  const cats=await api('api/categories?vehicle_id='+r.id);
+  catMS.setItems(cats.map(c=>({id:c.id,name:c.name})));
+  if(window._pendingCids&&window._pendingCids.length){
+    catMS.setSel(window._pendingCids); window._pendingCids=null; loadParts();
+  }
+  renderParts();
+}
+for(const id of ['fBrand','fCoated','fPos']) document.getElementById(id).onchange=loadParts;
+document.getElementById('ctype').onchange=renderParts;
+
+async function loadParts(){
+  const vid=vehicleSS.getId(), cids=catMS?catMS.getIds():[];
+  if(!vid||!cids.length) return;
+  const fo=await api(`api/parts/filter_options?vehicle_id=${vid}&category_ids=${cids.join(',')}`);
+  const bs=document.getElementById('fBrand'), cur=bs.value;
+  bs.innerHTML='<option value="">'+esc(T('all'))+'</option>'+fo.brands.map(b=>`<option>${esc(b)}</option>`).join('');
+  if(fo.brands.includes(cur)) bs.value=cur;
+  const q=new URLSearchParams({vehicle_id:vid,category_ids:cids.join(','),
+    brand:bs.value,coated:document.getElementById('fCoated').value,
+    position:document.getElementById('fPos').value});
+  parts=await api('api/parts?'+q);
+  // 从粘贴导入跳转过来：自动勾上刚导入的配件
+  if(window._pendingPids&&window._pendingPids.length){
+    for(const pid of window._pendingPids){
+      const p=parts.find(x=>x.id===pid);
+      if(p&&!selected.has(pid)){
+        const pr=priceOf(p);
+        selected.set(pid,{part:p,qty:1,price:pr!=null?pr:p.cost});
+      }
+    }
+    window._pendingPids=null;
+  }
+  renderParts();
+}
+function priceOf(p){ const t=document.getElementById('ctype').value;
+  return t==='garage'?p.price_garage:p.price_retail; }
+/* 生效卖价：已选看已选价 > 手动改过看手动价 > 默认价格层 */
+function effPrice(p){
+  const s=selected.get(p.id);
+  if(s&&s.price!=null) return s.price;
+  if(priceEdits.has(p.id)) return priceEdits.get(p.id);
+  return priceOf(p);
+}
+function setPrice(id, price){
+  const s=selected.get(id);
+  if(s) s.price=price;
+  if(price==null||isNaN(price)) priceEdits.delete(id); else priceEdits.set(id, price);
+}
+function renderParts(){
+  const tb=document.querySelector('#partsTbl tbody');
+  const vid=vehicleSS?vehicleSS.getId():'', cids=catMS?catMS.getIds():[];
+  if(!vid||!cids.length){tb.innerHTML='<tr><td colspan="10" class="mut">'+esc(T('please_select_vc'))+'</td></tr>';renderSel();return;}
+  if(!parts.length){tb.innerHTML='<tr><td colspan="10" class="mut">'+esc(T('no_match'))+'</td></tr>';renderSel();return;}
+  tb.innerHTML=parts.map(p=>{
+    const pr=effPrice(p), sel=selected.get(p.id);
+    return `<tr>
+    <td><input type="checkbox" data-id="${p.id}" ${sel?'checked':''} onchange="toggleSel(${p.id},this.checked)"></td>
+    <td>${p.tier?`<span class="tier ${p.tier}">${tierName(p.tier)}</span>`:''}</td>
+    <td><b>${esc(p.brand||'')}</b><br><a href="javascript:void(0)" onclick="showPartDetail(${p.id})" style="color:inherit">${esc(p.part_number)}</a></td>
+    <td>${p.category_name?`<span class="chip">${esc(catName(p.category_name))}</span>`:''}${p.position?`${p.category_name?' · ':''}<b class="mut">${esc(posName(p.position))}</b>`:''}${(p.category_name||p.position)?'<br>':''}${esc(p.specs||'')}${p.coated?'<br><span class="mut">'+p.coated+'</span>':''}<br><span class="mut">${esc(fitLang(p.fitment_notes||'').slice(0,80))}</span></td>
+    <td>${p.cost!=null?'$'+p.cost.toFixed(2):'—'}</td>
+    <td class="mut">${fmtStock(p)}</td>
+    <td><input class="num" type="number" step="0.01" min="0" data-price="${p.id}" value="${pr!=null?pr:(p.cost!=null?p.cost:'')}" onchange="updPrice(${p.id},this.value)"></td>
+    <td><input class="num" type="number" step="0.1" min="0" max="99.9" data-gp="${p.id}" value="${gpNum(p.cost, sel&&sel.price!=null?sel.price:pr)}" ${p.cost==null?'disabled':''} onchange="updGp(${p.id},this.value)" style="width:70px!important"></td>
+    <td><input class="num" type="number" min="1" value="${sel?sel.qty:1}" data-qty="${p.id}" onchange="updQty(${p.id},this.value)"></td>
+    <td><button class="sec" style="padding:4px 8px" onclick="showAlt(${p.id},this)">${T('alt_swap')}</button></td></tr>`;
+  }).join('');
+  renderSel();
+}
+async function showAlt(id,btn){
+  const tr=btn.closest('tr');
+  const old=tr.nextSibling;
+  if(old&&old.classList&&old.classList.contains('alt-row')){old.remove();return;}
+  document.querySelectorAll('.alt-row').forEach(r=>r.remove());
+  const r=await api('api/parts/'+id+'/alternates');
+  const mk=a=>a.length?a.map(p=>`<div style="padding:5px 0;border-top:1px dashed #ccc">
+    ${p.tier?`<span class="tier ${p.tier}">${tierName(p.tier)}</span> `:''}<b>${esc(p.brand||'')}</b> ${esc(p.part_number)}
+    <span class="mut">${esc(p.vehicle_label||'')} · ${esc(p.specs||'')}${p.coated?' · '+p.coated:''}${p.position?' · '+posName(p.position):''}</span>
+    ${p.oem_number?`<span class="mut"> · OEM ${esc(p.oem_number)}</span>`:''}
+    <span class="mut"> · ${T('th_cost')} $${p.cost!=null?p.cost.toFixed(2):'—'}</span>
+    <button class="sec" style="padding:2px 10px;margin-left:8px" onclick="addAlt(${p.id})">${T('alt_add')}</button></div>`).join('')
+    :'<div class="mut" style="padding:4px 0">'+esc(T('alt_none'))+'</div>';
+  const row=document.createElement('tr'); row.className='alt-row';
+  row.innerHTML=`<td colspan="10" style="background:#f7f9fc"><b>${T('alt_title')}</b>
+    <span class="mut">（OEM: ${esc(r.part.oem_number||T('alt_oem_unreg'))}，${T('alt_hint')}）</span>
+    <div style="margin-top:6px"><b>${T('alt_by_oem')}</b>${mk(r.by_oem)}</div>
+    <div style="margin-top:6px"><b>${T('alt_by_app')}</b>${mk(r.by_application)}</div></td>`;
+  tr.after(row);
+}
+async function addAlt(id){
+  const p=await api('api/parts/'+id);
+  const pr=priceOf(p);
+  selected.set(id,{part:p,qty:1,price:pr!=null?pr:p.cost});
+  document.querySelectorAll('.alt-row').forEach(r=>r.remove());
+  renderParts(); renderSel();
+}
+function toggleSel(id,on){
+  const p=parts.find(x=>x.id===id);
+  if(on){ const pr=effPrice(p);
+    selected.set(id,{part:p,qty:1,price:pr!=null?pr:p.cost}); }
+  else selected.delete(id);
+  renderParts();
+}
+/* 全选/全不选当前筛选结果 */
+function toggleSelAll(on){
+  for(const p of (parts||[])){
+    if(on){ const pr=effPrice(p);
+      if(!selected.has(p.id)) selected.set(p.id,{part:p,qty:1,price:pr!=null?pr:p.cost});
+    } else selected.delete(p.id);
+  }
+  renderParts();
+}
+/* 改卖价 → GP% 联动 */
+function updPrice(id,v){
+  const price=v===''?null:parseFloat(v);
+  setPrice(id,(price!=null&&!isNaN(price))?price:null);
+  const p=parts.find(x=>x.id===id);
+  const g=document.querySelector(`[data-gp="${id}"]`);
+  if(g) g.value=gpNum(p.cost, effPrice(p));
+  renderSel();
+}
+/* 改 GP% → 卖价联动 */
+function updGp(id,v){
+  const p=parts.find(x=>x.id===id);
+  const g=parseFloat(v);
+  const price=priceFromGp(p.cost,g);
+  const gInp=document.querySelector(`[data-gp="${id}"]`);
+  if(price==null){ if(gInp) gInp.value=gpNum(p.cost,effPrice(p)); return; }
+  const rounded=Math.round(price*100)/100;
+  setPrice(id,rounded);
+  const inp=document.querySelector(`[data-price="${id}"]`);
+  if(inp) inp.value=rounded.toFixed(2);
+  if(gInp) gInp.value=g.toFixed(1);
+  renderSel();
+}
+function updQty(id,v){ const s=selected.get(id); if(s){s.qty=Math.max(1,parseInt(v)||1);} renderSel(); }
+function renderSel(){
+  const box=document.getElementById('selList');
+  /* 同步表头全选框 */
+  const sa=document.getElementById('selAllChk');
+  if(sa) sa.checked=(parts||[]).length>0&&(parts||[]).every(p=>selected.has(p.id));
+  if(!selected.size){box.innerHTML=esc(T('no_sel'));document.getElementById('subtotal').textContent='CAD 0.00';return;}
+  let tot=0;
+  box.innerHTML='<table><tbody>'+[...selected.values()].map(s=>{
+    const line=(s.price||0)*s.qty; tot+=line;
+    return `<tr><td>${s.part.tier?`<span class="tier ${s.part.tier}">${tierName(s.part.tier)}</span> `:''}<b>${esc(s.part.brand)}</b> ${esc(s.part.part_number)}</td>
+    <td>x${s.qty}</td><td>$${(s.price||0).toFixed(2)}</td><td>$${line.toFixed(2)}</td>
+    <td><button class="sec" style="padding:4px 10px" onclick="rmSel(${s.part.id})">${T('remove')}</button></td></tr>`;
+  }).join('')+'</tbody></table>';
+  document.getElementById('subtotal').textContent='CAD '+tot.toFixed(2);
+}
+function rmSel(id){ selected.delete(id); renderParts(); }
+
+document.getElementById('genBtn').onclick=async ()=>{
+  if(!selected.size){alert(T('alert_pick_parts'));return;}
+  const payload=buildPayload();
+  const r=await api('api/quote_text',{method:'POST',body:JSON.stringify(payload)});
+  quoteEN=r.en; quoteFR=r.fr;
+  document.getElementById('quoteOut').style.display='block';
+  document.getElementById('quoteTextEN').textContent=r.en;
+  document.getElementById('quoteTextFR').textContent=r.fr;
+};
+function buildPayload(){
+  return {
+    customer_id:custSel?custSel.id:null,
+    customer_name:custSel?custSel.name:(window._editCname||''),
+    customer_type:document.getElementById('ctype').value,
+    vehicle_id:vehicleSS.getId()||null,
+    vehicle_text:vehicleSS.getLabel()||'',
+    vin:document.getElementById('vin').value||'',
+    notes:document.getElementById('qnotes').value||'',
+    items:[...selected.values()].map(s=>({part_id:s.part.id,qty:s.qty,quoted_price:s.price,
+      brand:s.part.brand,part_number:s.part.part_number,specs:s.part.specs,
+      tier:s.part.tier,coated:s.part.coated,position:s.part.position,cost:s.part.cost}))
+  };
+}
+function copyText(btnId,t){
+  navigator.clipboard.writeText(t).then(()=>{
+    const b=document.getElementById(btnId); b.textContent=T('copied');
+    setTimeout(()=>b.textContent=T(btnId==='copyEN'?'copy_en':'copy_fr'),1500);
+  });
+}
+document.getElementById('copyEN').onclick=()=>copyText('copyEN',quoteEN);
+document.getElementById('copyFR').onclick=()=>copyText('copyFR',quoteFR);
+document.getElementById('delQuoteBtn').onclick=async ()=>{
+  if(!window._editQid)return;
+  if(!confirm(T('quote_del_confirm')))return;
+  await api('api/quotes/'+window._editQid,{method:'DELETE'});
+  location.href=appBase()+'journal';
+};
+document.getElementById('saveBtn').onclick=async ()=>{
+  if(!selected.size){alert(T('alert_pick_parts'));return;}
+  const msg=document.getElementById('saveMsg');
+  try{
+    if(window._editQid){
+      const r=await api('api/quotes/'+window._editQid,{method:'PUT',body:JSON.stringify(buildPayload())});
+      msg.textContent=T('updated_prefix')+r.id+T('updated_suffix');
+    }else{
+      const r=await api('api/quotes',{method:'POST',body:JSON.stringify(buildPayload())});
+      msg.textContent=T('saved_prefix')+r.id+T('saved_suffix');
+      selected.clear(); renderParts();
+      document.getElementById('quoteOut').style.display='none';
+    }
+  }catch(e){ msg.textContent=T('save_fail')+e.message; }
+};
+window.onLangChange=()=>{
+  if(vehicleSS) vehicleSS.setPh(T('ph_search_vehicle'));
+  if(custSS) custSS.setPh(T('ph_search_customer'));
+  if(catMS){ catMS.setPh(T('cat_multi_ph')); catMS.setSearchPh(T('cat_search_ph')); catMS.rerender(); }
+  const eb=document.getElementById('vehEditBtn'); if(eb) eb.title=T('v_edit_title');
+  if(window._editQid){
+    document.getElementById('saveBtn').textContent='💾 '+T('edit')+' #'+window._editQid;
+    document.getElementById('editBannerText').textContent=T('editing_banner')+' #'+window._editQid;
+  }
+  renderParts();
+};
+loadVehicles();
+applyLang();
+</script>
+{% endblock %}

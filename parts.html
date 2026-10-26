@@ -1,0 +1,488 @@
+{% extends "base.html" %}{% block title %}配件管理{% endblock %}
+{% block content %}
+<script>window.PAGE_TITLE_KEY='nav_parts';</script>
+<div class="card" id="pasteCard">
+  <h3><span data-i18n="pi_title">粘贴导入</span> <span class="mut" data-i18n="pi_hint">（供应商查询原文一贴，自动解析，确认后入库）</span></h3>
+  <textarea id="pasteBox" rows="6" style="width:100%" data-i18n-ph="pi_ph" placeholder="粘贴 CBK / Transbec / Transit 的查询结果原文，例如：&#10;CBK International Inc&#10;CBK&#10;Wheel Bearing (Rear)&#10;Part# WH513058&#10;Product Details: BRG/KIA 02-10&#10;Per Veh: 2&#10;Years: 2005-2010"></textarea>
+  <div class="mut" style="font-size:12px;margin-top:4px" data-i18n="paste_img_hint">💡 桌面端截图后可直接 Ctrl+V 粘贴图片识别</div>
+  <div class="rowflex" style="margin-top:8px">
+    <button id="parseBtn" data-i18n="parse">解析</button>
+    <button class="sec" id="ocrBtn">📷 <span data-i18n="ocr_btn">截图识别</span></button>
+    <input type="file" id="ocrFile" accept="image/*" style="display:none">
+    <button class="sec" id="resetBtn" data-i18n="reset">清空</button>
+    <span class="mut" id="parseMsg"></span>
+  </div>
+  <div id="parsePreview" style="display:none;margin-top:10px"></div>
+</div>
+<div class="card">
+  <h3><span data-i18n="rl_title">件号反查</span> <span class="mut" data-i18n="rl_hint">（适用车型＋历史报价）</span></h3>
+  <div class="rowflex">
+    <input id="rlPn" data-i18n-ph="rl_ph" placeholder="输入件号，如 CMX-D1736" style="flex:1;max-width:320px">
+    <button id="rlGo" data-i18n="search">查找</button>
+    <span class="mut" id="rlMsg"></span>
+  </div>
+  <div id="rlRes" style="display:none;margin-top:10px"></div>
+</div>
+<div class="card">
+  <h3><span data-i18n="p_title">配件</span> <span class="mut" data-i18n="p_hint">（价格层对着 capp 填：散客价 / 修车厂价）</span></h3>
+  <div class="filters" style="margin-bottom:10px">
+    <div><label data-i18n="vehicle">车辆</label><div id="fVBox"></div></div>
+    <div><label data-i18n="category">品类</label><select id="fC"><option value="" data-i18n="all">全部</option></select></div>
+    <div><label data-i18n="f_search">搜索（品牌/件号）</label><input id="fQ" placeholder="如 CM1165"><div class="mut" style="font-size:12px" data-i18n="f_search_hint">不选车辆可跨车搜索</div></div>
+    <div><label>&nbsp;</label><button class="sec" onclick="loadParts()" data-i18n="filter">筛选</button></div>
+  </div>
+  <div class="rowflex" style="margin-bottom:10px">
+    <button onclick="openEdit(null)" data-i18n="add_part">＋ 新增配件</button>
+    <button class="sec" onclick="openFillPrices()" data-i18n="fill_title">批量填价格</button>
+    <button class="sec" id="dupBtn" data-i18n="dup_title">检查重复</button>
+    <button class="sec" id="catMergeBtn" data-i18n="cat_merge_title">合并品类</button>
+    <button class="sec" onclick="openVehicle(()=>init())" data-i18n="add_vehicle">＋ 新增车辆</button>
+    <button class="sec" id="vehEditBtn" title="✎">✎</button>
+    <span class="mut" id="cnt"></span>
+  </div>
+  <div id="dupRes" style="display:none;margin-bottom:10px"></div>
+  <div style="overflow-x:auto"><div id="plist"></div></div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+let cache=[], fVSS=null, _vehList=[];
+async function init(){
+  const vs=await api('api/vehicles');
+  _vehList=vs;
+  fVSS=makeSearchable('fVBox',()=>loadParts(),T('ph_search_vehicle'));
+  fVSS.setItems(vs.map(v=>({id:v.id,label:v.label})));
+  (await api('api/categories')).forEach(c=>{
+    const o=document.createElement('option');o.value=c.id;o.textContent=catName(c.name);
+    document.getElementById('fC').appendChild(o);});
+  loadParts();
+  let fqT=null;
+  document.getElementById('fQ').addEventListener('input',()=>{
+    clearTimeout(fqT); fqT=setTimeout(loadParts,400);
+  });
+}
+async function loadParts(){
+  const q=new URLSearchParams({vehicle_id:fVSS.getId(),
+    category_id:document.getElementById('fC').value,q:document.getElementById('fQ').value});
+  cache=await api('api/parts?'+q);
+  /* 管理页排序：车型 → 品类 → 位置 → 品牌（报价页用接口默认的档次→价格） */
+  const _po={'Front':0,'Rear':1,'Left':2,'Right':3,'Front Left':4,'Front Right':5,'Rear Left':6,'Rear Right':7};
+  cache.sort((a,b)=>
+    String(a.vehicle_label||'').localeCompare(String(b.vehicle_label||''))||
+    String(a.category_name||'').localeCompare(String(b.category_name||''))||
+    ((_po[a.position]??9)-(_po[b.position]??9))||
+    String(a.brand||'').localeCompare(String(b.brand||''))||
+    String(a.part_number||'').localeCompare(String(b.part_number||'')));
+  document.getElementById('cnt').textContent=T('cnt_prefix')+cache.length+T('cnt_suffix');
+  document.getElementById('plist').innerHTML=cache.map(p=>`
+  <div class="pcard">
+    <div class="r1">
+      ${p.tier?`<span class="tier ${p.tier}">${tierName(p.tier)}</span>`:''}
+      <b>${esc(p.brand||'')}</b><span class="mut">${esc(p.part_number)}</span>
+      <span class="cost">${p.cost!=null?'$'+p.cost.toFixed(2):'—'}</span>
+    </div>
+    <div class="r2">${esc(p.vehicle_label||'')} · ${esc(catName(p.category_name||''))}${p.position?' · <b>'+esc(posName(p.position))+'</b>':''}</div>
+    <div class="r3">
+      <span>${T('retail')} ${p.price_retail!=null?'$'+p.price_retail.toFixed(2):'<span class="miss">'+esc(T('not_set'))+'</span>'}</span>
+      <span>${T('garage')} ${p.price_garage!=null?'$'+p.price_garage.toFixed(2):'<span class="miss">'+esc(T('not_set'))+'</span>'}</span>
+      <span class="mut">${T('th_stock')}: ${fmtStock(p)}</span>
+      <button class="sec" style="padding:4px 12px" onclick="openEdit(${p.id})">${T('edit')}</button>
+    </div>
+  </div>`).join('')
+  ||'<div class="mut" style="padding:12px">'+esc(T('no_records'))+'</div>';
+}
+function field(id,label,val,type){
+  return `<div><label>${label}</label><input id="${id}" type="${type||'text'}" value="${esc(val==null?'':val)}"></div>`;
+}
+function selField(id,label,val,opts){
+  return `<div><label>${label}</label><select id="${id}"><option value="">—</option>${
+    opts.map(o=>`<option value="${o[0]}"${String(val)===o[0]?' selected':''}>${o[1]}</option>`).join('')}</select></div>`;
+}
+async function openEdit(id){
+  const p=id?cache.find(x=>x.id===id):{vehicle_id:fVSS.getId()||'',category_id:document.getElementById('fC').value||''};
+  const vItems=(await api('api/vehicles')).map(v=>({id:v.id,label:v.label}));
+  const cs=(await api('api/categories')).map(c=>`<option value="${c.id}"${c.id===p.category_id?' selected':''}>${esc(catName(c.name))}</option>`).join('');
+  /* 删除按钮仅店主可见 */
+  let isOwner=false; try{isOwner=(await api('api/me')).is_owner;}catch(e){}
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${id?T('m_edit_part'):T('m_new_part')}</h3>
+    <div style="margin-bottom:10px"><label>${T('paste_fill_label')}</label>
+      <div class="rowflex"><textarea id="ePaste" rows="2" style="flex:1"></textarea>
+      <button class="sec" style="white-space:nowrap" onclick="fillEditFromPaste()">${esc(T('paste_fill_btn'))}</button></div></div>
+    <div class="grid2">
+      <div><label>${T('vehicle')}</label><div id="eVBox"></div></div>
+      <div><label>${T('category')}</label><select id="eC">${cs}</select></div>
+      ${field('eBrand',T('brand'),p.brand)}${field('ePN',T('part_no'),p.part_number)}
+      ${field('eSpecs',T('specs'),p.specs)}
+      ${selField('eCoated',T('coated'),p.coated,[['coated','coated'],['uncoated','uncoated']])}
+      ${selField('ePos',T('position'),p.position,['Front','Rear','Left','Right','Front Left','Front Right','Rear Left','Rear Right'].map(v=>[v,posName(v)]))}
+      ${selField('eTier',T('tier_label'),p.tier,[['economy',tierName('economy')],['standard',tierName('standard')],['premium',tierName('premium')]])}
+      ${field('eCost',T('th_cost'),p.cost,'number')}${field('ePR',T('th_retail'),p.price_retail,'number')}
+      ${field('ePG',T('th_garage'),p.price_garage,'number')}${field('eOEM',T('oem_no'),p.oem_number)}
+    </div>
+    <label>${T('stock_note')}</label><input id="eStock" data-raw="${esc(p.stock_note||'')}" value="${esc(noteLang(p.stock_note))}">
+    ${p.stock_updated_at?`<div class="mut">${T('stock_snapshot_at')}：${esc(p.stock_updated_at.slice(0,16))}</div>`:''}    <label>${T('fitment')}</label><textarea id="eFit" rows="2" data-raw="${esc(p.fitment_notes||'')}">${esc(noteLang(p.fitment_notes))}</textarea>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="saveEdit(${id||'null'})">${T('save')}</button>
+      ${id&&isOwner?`<button class="danger" onclick="delPart(${id})">${T('delete')}</button>`:''}
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${T('cancel')}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+  const eVSS=makeSearchable('eVBox',null,T('ph_search_vehicle'));
+  eVSS.setItems(vItems);
+  eVSS.pickById(p.vehicle_id);
+  window._eVSS=eVSS;
+  /* specs 里写了 coated/uncoated 就自动带到下拉框（已手动选过的不覆盖） */
+  const eSpecs=document.getElementById('eSpecs'), eCoated=document.getElementById('eCoated');
+  if(eSpecs&&eCoated){
+    eSpecs.oninput=()=>{
+      if(eCoated.value)return;
+      const v=eSpecs.value.toLowerCase();
+      if(/\buncoated\b/.test(v))eCoated.value='uncoated';
+      else if(/\bcoated\b/.test(v))eCoated.value='coated';
+    };
+  }
+}
+function num(id){ const v=document.getElementById(id).value; return v===''?null:parseFloat(v); }
+function fillEditFromPaste(){
+  parseFillPart({ta:'ePaste',
+    text:{brand:'eBrand',part_number:'ePN',specs:'eSpecs',cost:'eCost'},
+    raw:{stock_note:'eStock',fitment_notes:'eFit'},
+    select:{position:'ePos',coated:'eCoated'},
+    category:{sel:'eC'}});
+}
+/* 批量填价格：按目标 GP% 从成本算卖价，只填空格 */
+function openFillPrices(){
+  document.getElementById('mbox').innerHTML=`
+    <h3 style="margin-top:0">${T('fill_title')}</h3>
+    <div class="mut" style="margin-bottom:10px">${T('fill_hint')}</div>
+    <div class="grid2">
+      <div><label>${T('retail')} GP%</label><input id="ffR" type="number" value="35" min="1" max="99" step="1"></div>
+      <div><label>${T('garage')} GP%</label><input id="ffG" type="number" value="35" min="1" max="99" step="1"></div>
+    </div>
+    <div class="rowflex" style="margin-top:10px">
+      <button onclick="doFillPrices()">${T('fill_go')}</button>
+      <button class="sec" onclick="document.getElementById('modal').classList.remove('open')">${T('cancel')}</button>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+}
+async function doFillPrices(){
+  const r=await api('api/parts/fill_prices',{method:'POST',body:JSON.stringify({
+    retail_gp:parseFloat(document.getElementById('ffR').value),
+    garage_gp:parseFloat(document.getElementById('ffG').value),
+    vehicle_id:fVSS.getId()||null,
+    category_id:document.getElementById('fC').value||null})});
+  document.getElementById('modal').classList.remove('open');
+  alert(T('fill_done_prefix')+r.updated+T('fill_done_suffix'));
+  loadParts();
+}
+async function saveEdit(id){
+  const body={vehicle_id:parseInt(window._eVSS.getId()),
+    category_id:parseInt(document.getElementById('eC').value),
+    brand:document.getElementById('eBrand').value, part_number:document.getElementById('ePN').value,
+    specs:document.getElementById('eSpecs').value||null, coated:document.getElementById('eCoated').value||null,
+    position:document.getElementById('ePos').value||null, tier:document.getElementById('eTier').value||null,
+    cost:num('eCost'), price_retail:num('ePR'), price_garage:num('ePG'),
+    oem_number:document.getElementById('eOEM').value||null,
+    stock_note:rawVal(document.getElementById('eStock'))||null,
+    fitment_notes:rawVal(document.getElementById('eFit'))||null};
+  if(!body.part_number){alert(T('alert_pn_required'));return;}
+  await api(id?('api/parts/'+id):'api/parts',{method:id?'PUT':'POST',body:JSON.stringify(body)});
+  document.getElementById('modal').classList.remove('open'); loadParts();
+}
+async function delPart(id){
+  if(!confirm(T('confirm_del')))return;
+  await api('api/parts/'+id,{method:'DELETE'});
+  document.getElementById('modal').classList.remove('open'); loadParts();
+}
+// ---- 粘贴导入（多件） ----
+/* 截图 OCR：手机截屏 Nexpart 页面 → 服务器识别成文字 → 进解析框 */
+function _loadImg(file){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>res(img); img.onerror=()=>rej(new Error('bad image'));
+    img.src=URL.createObjectURL(file);
+  });
+}
+function _shrink(img,maxW){
+  return new Promise((res)=>{
+    let w=img.naturalWidth,h=img.naturalHeight;
+    if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
+    const c=document.createElement('canvas');c.width=w;c.height=h;
+    c.getContext('2d').drawImage(img,0,0,w,h);
+    c.toBlob(b=>res(b),'image/jpeg',0.85);
+  });
+}
+document.getElementById('ocrBtn').onclick=()=>document.getElementById('ocrFile').click();
+async function ocrImageFile(file,targetId){
+  const msg=document.getElementById('parseMsg');
+  msg.textContent=T('ocr_working');
+  try{
+    const blob=await _shrink(await _loadImg(file),1600);
+    const fd=new FormData(); fd.append('image',blob,'shot.jpg');
+    const r=await fetch('api/parts/ocr',{method:'POST',body:fd});
+    if(r.status===401){location.href=appBase()+'login';return;}
+    const j=await r.json();
+    if(!r.ok)throw new Error((j&&j.detail)||(j&&j.error)||('HTTP '+r.status));
+    document.getElementById(targetId||'pasteBox').value=j.text||'';
+    msg.textContent=j.text?T('ocr_done'):T('ocr_empty');
+  }catch(err){ msg.textContent=T('ocr_fail')+err.message; }
+}
+document.getElementById('ocrFile').onchange=(e)=>{
+  const file=e.target.files[0]; e.target.value='';
+  if(file)ocrImageFile(file,'pasteBox');
+};
+/* 桌面端：截图后在粘贴区直接 Ctrl+V 粘贴图片 */
+document.addEventListener('paste',(e)=>{
+  const items=(e.clipboardData&&e.clipboardData.items)||[];
+  const item=[...items].find(i=>i.type&&i.type.startsWith('image/'));
+  if(!item)return;
+  const t=e.target;
+  const modal=document.getElementById('modal');
+  const inModal=modal.classList.contains('open')&&modal.contains(t);
+  const inPasteCard=(t.id==='pasteBox')||(t.closest&&t.closest('#pasteCard'));
+  if(!inModal&&!inPasteCard)return;
+  e.preventDefault();
+  const file=item.getAsFile();
+  if(file)ocrImageFile(file,inModal?'ePaste':'pasteBox');
+});
+document.getElementById('resetBtn').onclick=()=>{
+  document.getElementById('pasteBox').value='';
+  document.getElementById('parsePreview').style.display='none';
+  document.getElementById('parseMsg').textContent='';
+};
+/* ---- 件号反查：适用车型 + 历史报价 ---- */
+async function reverseLookup(){
+  const pn=document.getElementById('rlPn').value.trim();
+  const msg=document.getElementById('rlMsg'), res=document.getElementById('rlRes');
+  if(!pn){msg.textContent=T('alert_paste_first');return;}
+  msg.textContent=T('searching'); res.style.display='none';
+  try{
+    const r=await api('api/parts/reverse_lookup?pn='+encodeURIComponent(pn));
+    const vRows=r.vehicles.map(v=>`<div style="padding:6px 0;border-bottom:1px solid #f1f5f9">
+      <b>${esc(v.vehicle)}</b>
+      <span class="mut">${esc(v.brand||'')} ${esc(v.part_number)}</span>
+      ${v.position?`<span class="chip">${esc(posName(v.position))}</span>`:''}
+      ${v.coated?`<span class="chip">${esc(v.coated)}</span>`:''}
+      <span class="mut">${v.cost!=null?'CAD '+v.cost:''} ${esc(v.seller||'')}</span>
+      <button class="sec" style="padding:2px 8px" onclick="rlGoVehicle(${v.vehicle_id})">${esc(T('rl_view_parts'))}</button>
+    </div>`).join('');
+    const qRows=r.quotes.map(q=>`<div style="padding:6px 0;border-bottom:1px solid #f1f5f9">
+      <b>#${q.quote_id}</b> <span class="mut">${esc(q.date||'')}</span>
+      ${esc(q.customer||'—')} <span class="mut">${esc(q.vehicle||'')}</span>
+      <span class="mut">x${q.qty} @ CAD ${q.price!=null?q.price:'—'}</span>
+      ${q.status?`<span class="chip">${esc(T('st_'+q.status))}</span>`:''}
+    </div>`).join('');
+    res.innerHTML=
+      `<div style="margin-bottom:8px"><b>${esc(T('rl_vehicles'))} (${r.vehicles.length})</b>
+       ${vRows||`<div class="mut">${esc(T('rl_none'))}</div>`}</div>
+       <div><b>${esc(T('rl_quotes'))} (${r.quotes.length})</b>
+       ${qRows||`<div class="mut">${esc(T('rl_none'))}</div>`}</div>`;
+    res.style.display='';
+    msg.textContent='';
+  }catch(e){ msg.textContent=T('save_fail')+e.message; }
+}
+function rlGoVehicle(vid){
+  /* 跳到该车型的配件列表 */
+  if(typeof fVSS!=='undefined'&&fVSS){ fVSS.pickById(vid); loadParts(); }
+  document.getElementById('rlRes').scrollIntoView();
+}
+document.getElementById('rlGo').onclick=reverseLookup;
+/* v1.86: CSV 价格导入 UI 已移除（后端 API 保留，以后需要可加回） */
+/* v1.86: CSV 价格导入 UI 已移除（后端 API 保留） */
+document.getElementById('rlPn').onkeydown=(e)=>{ if(e.key==='Enter') reverseLookup(); };
+document.getElementById('dupBtn').onclick=async ()=>{
+  const res=document.getElementById('dupRes');
+  res.style.display=''; res.innerHTML=`<span class="mut">${esc(T('searching'))}</span>`;
+  try{
+    const r=await api('api/parts/duplicates');
+    if(!r.groups.length){
+      res.innerHTML=`<span class="mut">${esc(T('dup_none'))}</span>`; return;
+    }
+    res.innerHTML=`<b>${esc(T('dup_found_prefix'))}${r.count}${esc(T('dup_found_suffix'))}</b>`+
+      r.groups.map((g,gi)=>`<div data-dup="${gi}" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:8px 0">
+        <div style="margin-bottom:6px"><b>${esc(g.vehicle)}</b> <span class="mut">${esc(g.part_number)}</span></div>
+        ${g.parts.map((p,pi)=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid #f1f5f9">
+          <input type="radio" name="keep${gi}" value="${p.id}"${pi===0?' checked':''} style="width:20px;height:20px;margin-top:2px">
+          <span><b>${esc(p.brand||'—')}</b> ${esc(p.part_number)}
+            <span class="mut">${esc((p.specs||'').slice(0,60))}</span><br>
+            <span class="mut">${p.cost!=null?'CAD '+p.cost:''} ${esc(p.seller||'')} ${esc(p.position||'')} ${esc(p.coated||'')}</span>
+          </span>
+        </label>`).join('')}
+        <div style="margin-top:6px"><button class="sec" onclick="mergeDup(${gi})">${esc(T('dup_merge'))}</button>
+        <span class="mut">${esc(T('dup_merge_hint'))}</span></div>
+      </div>`).join('');
+    window._dupGroups=r.groups;
+  }catch(e){ res.innerHTML=`<span class="mut">${esc(T('save_fail')+e.message)}</span>`; }
+};
+async function mergeDup(gi){
+  const g=(window._dupGroups||[])[gi]; if(!g)return;
+  const card=document.querySelector(`[data-dup="${gi}"]`);
+  const sel=card.querySelector(`input[name="keep${gi}"]:checked`);
+  if(!sel)return;
+  const keepId=parseInt(sel.value);
+  const mergeIds=g.parts.map(p=>p.id).filter(id=>id!==keepId);
+  if(!mergeIds.length)return;
+  if(!confirm(T('dup_confirm_prefix')+mergeIds.length+T('dup_confirm_suffix')))return;
+  try{
+    await api('api/parts/merge',{method:'POST',body:JSON.stringify({keep_id:keepId,merge_ids:mergeIds})});
+    card.remove();
+    loadParts();
+  }catch(e){ alert(T('save_fail')+e.message); }
+}
+/* ---- 合并重复品类 ---- */
+document.getElementById('catMergeBtn').onclick=async ()=>{
+  const res=document.getElementById('dupRes');
+  res.style.display=''; res.innerHTML=`<span class="mut">${esc(T('searching'))}</span>`;
+  try{
+    const r=await api('api/categories/duplicates');
+    if(!r.groups.length){
+      res.innerHTML=`<span class="mut">${esc(T('cat_dup_none'))}</span>`; return;
+    }
+    res.innerHTML=`<b>${esc(T('cat_dup_found_prefix'))}${r.count}${esc(T('cat_dup_found_suffix'))}</b>`+
+      r.groups.map((g,gi)=>`<div data-catdup="${gi}" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin:8px 0">
+        ${g.cats.map((c,ci)=>`<label style="display:flex;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #f1f5f9">
+          <input type="radio" name="ckeep${gi}" value="${c.id}"${ci===0?' checked':''} style="width:20px;height:20px">
+          <span><b>${esc(catName(c.name))}</b> <span class="mut">${c.n_parts} ${esc(T('th_parts'))}</span></span>
+        </label>`).join('')}
+        <div style="margin-top:6px"><button class="sec" onclick="mergeCatDup(${gi})">${esc(T('dup_merge'))}</button>
+        <span class="mut">${esc(T('cat_merge_hint'))}</span></div>
+      </div>`).join('');
+    window._catDupGroups=r.groups;
+  }catch(e){ res.innerHTML=`<span class="mut">${esc(T('save_fail')+e.message)}</span>`; }
+};
+async function mergeCatDup(gi){
+  const g=(window._catDupGroups||[])[gi]; if(!g)return;
+  const card=document.querySelector(`[data-catdup="${gi}"]`);
+  const sel=card.querySelector(`input[name="ckeep${gi}"]:checked`);
+  if(!sel)return;
+  const keepId=parseInt(sel.value);
+  const mergeIds=g.cats.map(c=>c.id).filter(id=>id!==keepId);
+  if(!mergeIds.length)return;
+  if(!confirm(T('dup_confirm_prefix')+mergeIds.length+T('dup_confirm_suffix')))return;
+  try{
+    await api('api/categories/merge',{method:'POST',body:JSON.stringify({keep_id:keepId,merge_ids:mergeIds})});
+    card.remove();
+    loadParts();
+  }catch(e){ alert(T('save_fail')+e.message); }
+}
+document.getElementById('parseBtn').onclick=async ()=>{
+  const text=document.getElementById('pasteBox').value;
+  const msg=document.getElementById('parseMsg'), pv=document.getElementById('parsePreview');
+  if(!text.trim()){msg.textContent=T('alert_paste_first');return;}
+  msg.textContent=T('parsing');
+  try{
+  const r=await api('api/parts/parse',{method:'POST',body:JSON.stringify({text})});
+  if(!r.parts.length){msg.textContent=T('alert_no_parts');pv.style.display='none';return;}
+  const pVehicles=await api('api/vehicles');
+  const cats=await api('api/categories');
+  const csOpts=sug=>cats.map(c=>`<option value="${c.id}"${c.name===sug?' selected':''}>${esc(catName(c.name))}</option>`).join('');
+  pv.style.display='block';
+  pv.innerHTML=`
+    ${r.warnings&&r.warnings.length?`<div style="color:#b45309;margin-bottom:8px">⚠️ ${r.warnings.map(esc).join('；')}</div>`:''}
+    ${r.vehicle_suggest?`<div class="mut" style="margin-bottom:8px">${T('vehicle_suggest_prefix')}<b>${esc(r.vehicle_suggest)}</b>${T('vehicle_suggest_suffix')}</div>`:''}
+    <div style="margin-bottom:8px;max-width:340px"><label>${T('vehicle_shared')}</label><div id="pVBox"></div>
+    <div class="rowflex" style="margin-top:6px;align-items:center">
+      <button class="sec" id="pAddV" style="padding:4px 10px">＋ ${T('add_vehicle')}</button>
+      <span class="mut">${T('no_vehicle_hint')}</span>
+    </div></div>
+    ${r.parts.map((p,i)=>`
+    <div data-pidx="${i}" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px">
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <input type="checkbox" data-chk="${i}" checked style="width:22px;height:22px">
+        <b>${T('pi_item_prefix')}${i+1}${T('pi_item_suffix')}${esc(p.brand||'?')} ${esc(p.part_number||T('no_pn'))}</b>
+        <span class="mut">${esc(p.category_raw||'')}</span></label>
+      <div class="grid3">
+        <div><label>${T('pi_cat')}</label><select data-f="cat" data-i="${i}">${csOpts(p.category_suggest)}</select></div>
+        <div><label>${T('pi_cat_new')}</label><input data-f="catNew" data-i="${i}" placeholder="${esc(T('pi_cat_new_ph'))}"></div>
+        <div><label>${T('oem_no')}</label><input data-f="oem" data-i="${i}"></div>
+        ${field('ppBrand'+i,T('brand'),p.brand)}${field('ppPN'+i,T('part_no')+' *',p.part_number)}${field('ppSeller'+i,T('supplier'),p.seller)}
+        ${field('ppSpecs'+i,T('specs'),p.specs)}${field('ppCost'+i,T('th_cost'),p.cost,'number')}<div><label>${T('stock_note')}</label><input id="ppStock${i}" data-raw="${esc(p.stock_note||'')}" value="${esc(noteLang(p.stock_note))}"></div>
+        <div><label>${T('position')}</label><input data-f="position" data-i="${i}" value="${esc(p.position||'')}" placeholder="Front/Rear/Left/Right"></div>
+        <div style="grid-column:1/-1"><label>${T('fitment')}</label><input data-f="fit" data-i="${i}" data-raw="${esc(p.fitment_notes||'')}" style="width:100%" value="${esc(noteLang(p.fitment_notes))}"></div>
+        <input type="hidden" data-f="coated" value="${esc(p.coated||'')}">
+      </div>
+    </div>`).join('')}
+    <div class="rowflex"><button id="pSave">${T('confirm_save')}</button>
+    <button class="sec" onclick="document.getElementById('parsePreview').style.display='none'">${T('cancel')}</button></div>`;
+  msg.textContent=T('parsed_prefix')+r.parts.length+T('parsed_suffix');
+  window._parsedParts=r.parts;
+  const pVSS=makeSearchable('pVBox',null,T('ph_search_vehicle'));
+  pVSS.setItems(pVehicles.map(v=>({id:v.id,label:v.label})));
+  /* 简易性：沿用当前筛选车型，连续导入同一辆车不用重选 */
+  try{
+    const fvid=(typeof fVSS!=='undefined'&&fVSS)?fVSS.getId():'';
+    if(fvid){pVSS.pickSilentById(fvid);}
+  }catch(_){}
+  /* v1.88: 同一件检测已简化 — OEM号相同的自动互为alternate（后端by_oem查询），不再弹窗打扰 */
+  document.getElementById('pAddV').onclick=()=>openVehicle(async (id)=>{
+    const vs=await api('api/vehicles');
+    pVSS.setItems(vs.map(v=>({id:v.id,label:v.label})));
+    pVSS.pickById(id);
+  });
+  document.getElementById('pSave').onclick=async ()=>{
+    const msg2=document.getElementById('parseMsg');
+    try{
+    const vid=pVSS.getId();
+    if(!vid){alert(T('alert_choose_vehicle'));return;}
+    // 去重：同车 + 同件号视为重复（件号是主要标识）
+    const existing=new Set((await api('api/parts?vehicle_id='+vid)).map(p=>
+      (p.part_number||'').trim().toUpperCase()));
+    let done=0, dup=0; const cids=new Set(); const pids=[];
+    for(const card of pv.querySelectorAll('[data-pidx]')){
+      const i=parseInt(card.dataset.pidx);
+      if(!card.querySelector(`[data-chk="${i}"]`).checked)continue;
+      const g=n=>card.querySelector(`[data-f="${n}"]`).value;
+      const gr=n=>rawVal(card.querySelector(`[data-f="${n}"]`));
+      const pn=document.getElementById('ppPN'+i).value.trim();
+      if(!pn){alert(T('alert_pn_empty_prefix')+(i+1)+T('alert_pn_empty_suffix'));continue;}
+      if(existing.has(pn.toUpperCase())){dup++;continue;}
+      let cid=g('cat');
+      const cnew=g('catNew').trim();
+      if(cnew){cid=(await api('api/categories',{method:'POST',body:JSON.stringify({name:cnew})})).id;}
+      if(!cid){alert(T('alert_cat_prefix')+(i+1)+T('alert_cat_suffix'));continue;}
+      const nr=await api('api/parts',{method:'POST',body:JSON.stringify({
+        vehicle_id:parseInt(vid), category_id:parseInt(cid),
+        brand:document.getElementById('ppBrand'+i).value||null,
+        part_number:pn, specs:document.getElementById('ppSpecs'+i).value||null,
+        coated:g('coated')||null, position:g('position')||null,
+        seller:document.getElementById('ppSeller'+i).value||null,
+        cost:document.getElementById('ppCost'+i).value===''?null:parseFloat(document.getElementById('ppCost'+i).value),
+        stock_note:rawVal(document.getElementById('ppStock'+i))||null,
+        oem_number:g('oem')||null, fitment_notes:gr('fit')||null})});
+      pids.push(nr.id);
+      existing.add(pn.toUpperCase());
+      cids.add(cid); done++;
+    }
+    document.getElementById('pasteBox').value='';
+    pv.style.display='none'; init(); loadParts();
+    msg.innerHTML=esc(T('imported_prefix')+done+T('imported_suffix')+(dup?dup+T('dup_skip'):''))+
+      ` <button onclick="location.href=appBase()+'?vehicle_id=${vid}&category_ids=${[...cids].join(',')}&part_ids=${pids.join(',')}'">→ ${esc(T('go_quote'))}</button>`;
+    }catch(err){
+      msg2.textContent=T('save_fail')+err.message;
+    }
+  };
+  }catch(err){
+    msg.textContent=T('save_fail')+err.message;
+    pv.style.display='none';
+  }
+};
+window.onLangChange=()=>{ document.getElementById('vehEditBtn').title=T('v_edit_title'); init(); };
+document.getElementById('vehEditBtn').title=T('v_edit_title');
+document.getElementById('vehEditBtn').onclick=()=>{
+  const id=parseInt(fVSS.getId());
+  const v=_vehList.find(x=>x.id===id);
+  if(!v){alert(T('ph_search_vehicle'));return;}
+  openVehicle(async (nid)=>{
+    const vs=await api('api/vehicles');
+    _vehList=vs;
+    fVSS.setItems(vs.map(x=>({id:x.id,label:x.label})));
+    fVSS.pickSilentById(nid);
+    loadParts();
+  }, v);
+};
+init();
+applyLang();
+</script>
+{% endblock %}

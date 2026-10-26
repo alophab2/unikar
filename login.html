@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QuoteBook</title>
+<style>
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#eef2f7;margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#fff;border-radius:14px;padding:28px;width:320px;box-shadow:0 4px 24px #0001}
+h2{margin:0 0 16px;text-align:center}
+label{display:block;font-size:13px;color:#64748b;margin:10px 0 4px}
+input{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;box-sizing:border-box}
+button{width:100%;margin-top:16px;padding:11px;background:#2563eb;color:#fff;border:0;border-radius:8px;font-size:16px;cursor:pointer}
+#lMsg{color:#dc2626;font-size:13px;margin-top:10px;min-height:18px;text-align:center}
+.hint{font-size:13px;color:#b45309;background:#fef3c7;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:none}
+.langs{display:flex;gap:6px;justify-content:center;margin-top:14px}
+.langs button{width:auto;margin:0;padding:5px 12px;font-size:13px;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
+.langs button.on{background:#10243c;color:#fff}
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>📖 QuoteBook</h2>
+  <div class="hint" id="setupBox" data-i18n="setup_hint"></div>
+  <label data-i18n="staff_name">姓名</label>
+  <input id="lName" autocomplete="username">
+  <label data-i18n="pin">PIN 码</label>
+  <input id="lPin" type="password" inputmode="numeric" autocomplete="current-password">
+  <button id="lBtn" data-i18n="login_btn">登录</button>
+  <div id="lMsg"></div>
+  <div class="langs">
+    <button data-langbtn="zh" onclick="setLang('zh')">中文</button><button data-langbtn="en" onclick="setLang('en')">EN</button><button data-langbtn="fr" onclick="setLang('fr')">FR</button>
+  </div>
+  <div id="verLine" style="text-align:center;color:#94a3b8;font-size:12px;margin-top:10px"></div>
+</div>
+<script>{% include "i18n.js" %}</script>
+<script>
+async function init(){
+  applyLang();
+  try{
+    const v=await (await fetch('api/version')).json();
+    document.getElementById('verLine').textContent='QuoteBook v'+v.version;
+  }catch(e){}
+  try{
+    const ns=await (await fetch('api/needs_setup')).json();
+    if(ns.setup){
+      document.getElementById('setupBox').style.display='block';
+      document.getElementById('lBtn').textContent=T('setup_btn');
+    }
+  }catch(e){}
+}
+async function doLogin(){
+  const name=document.getElementById('lName').value.trim();
+  const pin=document.getElementById('lPin').value;
+  const msg=document.getElementById('lMsg');
+  const r=await fetch('api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,pin})});
+  if(r.ok){ location.href='./'; }
+  else{ msg.textContent=T('login_fail'); }
+}
+document.getElementById('lBtn').onclick=doLogin;
+document.getElementById('lPin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+init();
+</script>
+</body>
+</html>
